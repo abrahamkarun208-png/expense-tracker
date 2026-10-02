@@ -1,0 +1,41 @@
+package com.local.expensetracker;
+
+/** Shared import logic: parse one SMS and store the result. Used by the
+ *  activity (bulk import) and the receiver (live incoming SMS). */
+public class Importer {
+
+    public static void importOne(DbHelper db, String address, String body, long smsTs) {
+        SmsParser.Result r = SmsParser.parse(address, body, smsTs);
+        if (r == null) return;
+
+        if (r.isStatement) {
+            CardDue d = new CardDue();
+            d.cardKey = r.cardKey;
+            d.bankName = r.bankName;
+            d.card4 = r.card4;
+            d.totalDue = r.totalDue;
+            d.minDue = r.minDue;
+            d.dueTs = r.dueTs;
+            db.upsertDue(d);
+            return;
+        }
+        if (r.isPayment) {
+            db.markPaid(r.cardKey, r.amount);
+            return;
+        }
+        if (r.isTxn) {
+            String key = "sms|" + address + "|" + smsTs + "|" + body.hashCode();
+            if (db.txnExists(key)) return;
+            Transaction t = new Transaction();
+            t.key = key;
+            t.bankCode = r.bankCode;
+            t.bankName = r.bankName;
+            t.amount = r.amount;
+            t.type = r.type;
+            t.merchant = r.merchant;
+            t.ts = smsTs;
+            t.card4 = r.card4;
+            db.insertTxn(t);
+        }
+    }
+}

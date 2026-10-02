@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Expense Tracker</string>
+    <string name="perm_needed">SMS permission is needed to read your bank messages. Nothing leaves your phone.</string>
+    <string name="grant">Grant permission</string>
+    <string name="rescan">Rescan SMS</string>
+    <string name="transactions">Transactions</string>
+    <string name="cards">Credit Cards</string>
+    <string name="no_txns">No transactions found yet.</string>
+    <string name="no_dues">No card dues detected.</string>
+</resources>

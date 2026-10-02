@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="green_dark">#1B5E20</color>
+    <color name="green">#2E7D32</color>
+    <color name="red">#C62828</color>
+    <color name="blue">#1565C0</color>
+    <color name="amber">#EF6C00</color>
+    <color name="grey">#757575</color>
+    <color name="light_grey">#F5F5F5</color>
+    <color name="pill_paid_bg">#E8F5E9</color>
+    <color name="pill_due_bg">#FFEBEE</color>
+</resources>
