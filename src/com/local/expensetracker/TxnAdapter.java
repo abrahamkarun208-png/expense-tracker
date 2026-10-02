@@ -1,7 +1,6 @@
 package com.local.expensetracker;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -13,14 +12,23 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Transaction list with day-group headers (TxnGrouper.DayHeader rows).
+ * Items are Transaction or TxnGrouper.DayHeader.
+ */
 public class TxnAdapter extends BaseAdapter {
 
+    private static final int TYPE_HEADER = 0;
+    private static final int TYPE_TXN = 1;
+
+    private final Context ctx;
     private final LayoutInflater inflater;
-    private final List<Transaction> items;
+    private final List<Object> items;
     private final SimpleDateFormat df =
         new SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault());
 
-    public TxnAdapter(Context c, List<Transaction> items) {
+    public TxnAdapter(Context c, List<Object> items) {
+        this.ctx = c;
         this.inflater = LayoutInflater.from(c);
         this.items = items;
     }
@@ -28,12 +36,31 @@ public class TxnAdapter extends BaseAdapter {
     @Override public int getCount() { return items.size(); }
     @Override public Object getItem(int p) { return items.get(p); }
     @Override public long getItemId(int p) { return p; }
+    @Override public int getViewTypeCount() { return 2; }
+    @Override public int getItemViewType(int p) {
+        return items.get(p) instanceof TxnGrouper.DayHeader ? TYPE_HEADER : TYPE_TXN;
+    }
 
     @Override
     public View getView(int pos, View convertView, ViewGroup parent) {
-        View v = convertView;
+        if (getItemViewType(pos) == TYPE_HEADER) {
+            return headerView((TxnGrouper.DayHeader) items.get(pos), convertView, parent);
+        }
+        return txnView((Transaction) items.get(pos), convertView, parent);
+    }
+
+    private View headerView(TxnGrouper.DayHeader h, View v, ViewGroup parent) {
+        if (v == null) v = inflater.inflate(R.layout.item_day_header, parent, false);
+        TextView label = v.findViewById(R.id.dayLabel);
+        String count = h.count == 1 ? "1 transaction" : h.count + " transactions";
+        label.setText(h.label + "  \u00B7  " + count);
+        TextView total = v.findViewById(R.id.dayTotal);
+        total.setText("\u20B9" + String.format(Locale.US, "%,.0f", h.spent));
+        return v;
+    }
+
+    private View txnView(Transaction t, View v, ViewGroup parent) {
         if (v == null) v = inflater.inflate(R.layout.item_txn, parent, false);
-        Transaction t = items.get(pos);
 
         TextView badge = v.findViewById(R.id.bankBadge);
         badge.setText(shortCode(t.bankCode));
@@ -41,7 +68,7 @@ public class TxnAdapter extends BaseAdapter {
         TextView merchant = v.findViewById(R.id.merchant);
         String m = t.merchant == null || t.merchant.isEmpty()
             ? typeLabel(t.type) : t.merchant;
-        if ("CARD_SPEND".equals(t.type) && !t.card4.isEmpty()) {
+        if ("CARD_SPEND".equals(t.type) && t.card4 != null && !t.card4.isEmpty()) {
             m += "  \u2022\u2022\u2022\u2022 " + t.card4;
         }
         merchant.setText(m);
@@ -51,24 +78,32 @@ public class TxnAdapter extends BaseAdapter {
 
         TextView amount = v.findViewById(R.id.amount);
         amount.setText(fmt(t));
+        int color;
         if ("CREDIT".equals(t.type)) {
-            amount.setTextColor(Color.parseColor("#2E7D32"));
+            color = ctx.getColor(R.color.credit);
         } else if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) {
-            amount.setTextColor(Color.parseColor("#C62828"));
+            color = ctx.getColor(R.color.debit);
         } else {
-            amount.setTextColor(Color.parseColor("#424242"));
+            color = ctx.getColor(R.color.ink);
         }
+        amount.setTextColor(color);
 
         TextView pill = v.findViewById(R.id.typePill);
         pill.setText(typeLabel(t.type));
         int bg;
+        int fg;
         switch (t.type) {
-            case "DEBIT": bg = R.drawable.pill_debit; break;
-            case "CREDIT": bg = R.drawable.pill_credit; break;
-            case "TRANSFER": bg = R.drawable.pill_transfer; break;
-            default: bg = R.drawable.pill_card; break;
+            case "DEBIT":
+                bg = R.drawable.pill_debit; fg = ctx.getColor(R.color.debit); break;
+            case "CREDIT":
+                bg = R.drawable.pill_credit; fg = ctx.getColor(R.color.credit); break;
+            case "TRANSFER":
+                bg = R.drawable.pill_transfer; fg = ctx.getColor(R.color.transfer); break;
+            default:
+                bg = R.drawable.pill_card; fg = ctx.getColor(R.color.muted); break;
         }
         pill.setBackgroundResource(bg);
+        pill.setTextColor(fg);
         return v;
     }
 

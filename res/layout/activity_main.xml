@@ -8,10 +8,18 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Expense Tracker"
-        android:textSize="22sp"
+        android:text="@string/app_name"
+        android:textSize="24sp"
         android:textStyle="bold"
-        android:textColor="@color/green_dark" />
+        android:textColor="@color/ink" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_sub"
+        android:textSize="12sp"
+        android:textColor="@color/muted"
+        android:layout_marginTop="2dp" />
 
     <TextView
         android:id="@+id/permNotice"
@@ -19,58 +27,137 @@
         android:layout_height="wrap_content"
         android:visibility="gone"
         android:text="@string/perm_needed"
+        android:textSize="13sp"
         android:padding="12dp"
-        android:layout_marginTop="8dp"
-        android:background="@color/pill_due_bg" />
+        android:layout_marginTop="12dp"
+        android:background="@drawable/card" />
 
     <Button
         android:id="@+id/permButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:visibility="gone"
-        android:text="@string/grant" />
+        android:layout_marginTop="8dp"
+        android:text="@string/grant"
+        android:background="@drawable/btn_primary"
+        android:textColor="#FFFFFF" />
 
+    <!-- Hero total card -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/hero_card"
+        android:padding="20dp"
+        android:layout_marginTop="14dp">
+
+        <TextView
+            android:id="@+id/totalLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Spent today"
+            android:textSize="13sp"
+            android:textColor="#CDE3D4" />
+
+        <TextView
+            android:id="@+id/totalView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="₹0"
+            android:textSize="38sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:layout_marginTop="4dp" />
+
+        <TextView
+            android:id="@+id/txnCountView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 transactions"
+            android:textSize="12sp"
+            android:textColor="#CDE3D4"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+
+    <!-- Period tabs -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="12dp">
+        android:background="@drawable/tab_bar"
+        android:padding="4dp"
+        android:layout_marginTop="14dp">
 
         <Button
             android:id="@+id/btnDay"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Daily" />
+            android:text="@string/tab_daily"
+            android:textSize="12sp"
+            android:background="@drawable/tab_selected"
+            android:textColor="#FFFFFF"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp" />
+
         <Button
             android:id="@+id/btnWeek"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Weekly" />
+            android:text="@string/tab_weekly"
+            android:textSize="12sp"
+            android:background="@null"
+            android:textColor="@color/ink"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp" />
+
         <Button
             android:id="@+id/btnMonth"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Monthly" />
+            android:text="@string/tab_monthly"
+            android:textSize="12sp"
+            android:background="@null"
+            android:textColor="@color/ink"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp" />
+
+        <Button
+            android:id="@+id/btnCal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/tab_calendar"
+            android:textSize="12sp"
+            android:background="@null"
+            android:textColor="@color/ink"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/totalView"
-        android:layout_width="wrap_content"
+    <!-- Calendar (calendar tab only) -->
+    <LinearLayout
+        android:id="@+id/calCard"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="30sp"
-        android:textStyle="bold"
-        android:layout_marginTop="4dp"
-        android:text="₹0" />
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:background="@drawable/card"
+        android:padding="8dp"
+        android:layout_marginTop="12dp">
 
-    <TextView
-        android:id="@+id/totalLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@color/grey"
-        android:text="Spent today" />
+        <CalendarView
+            android:id="@+id/calView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:showWeekNumber="false" />
+    </LinearLayout>
 
     <TextView style="@style/SectionHeader"
         android:layout_width="wrap_content"
@@ -82,8 +169,8 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:divider="@android:color/darker_gray"
-        android:dividerHeight="1dp" />
+        android:divider="@null"
+        android:clipToPadding="false" />
 
     <TextView style="@style/SectionHeader"
         android:layout_width="wrap_content"
@@ -93,14 +180,16 @@
     <ListView
         android:id="@+id/dueList"
         android:layout_width="match_parent"
-        android:layout_height="150dp"
-        android:divider="@android:color/darker_gray"
-        android:dividerHeight="1dp" />
+        android:layout_height="168dp"
+        android:divider="@null"
+        android:clipToPadding="false" />
 
     <Button
         android:id="@+id/rescan"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/rescan" />
+        android:layout_marginTop="10dp"
+        android:text="@string/rescan"
+        android:background="@drawable/btn_primary"
+        android:textColor="#FFFFFF" />
 </LinearLayout>

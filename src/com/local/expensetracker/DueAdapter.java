@@ -1,7 +1,6 @@
 package com.local.expensetracker;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -15,12 +14,14 @@ import java.util.Locale;
 
 public class DueAdapter extends BaseAdapter {
 
+    private final Context ctx;
     private final LayoutInflater inflater;
     private final List<CardDue> items;
     private final SimpleDateFormat df =
         new SimpleDateFormat("dd MMM yyyy", Locale.getDefault());
 
     public DueAdapter(Context c, List<CardDue> items) {
+        this.ctx = c;
         this.inflater = LayoutInflater.from(c);
         this.items = items;
     }
@@ -36,18 +37,19 @@ public class DueAdapter extends BaseAdapter {
         CardDue d = items.get(pos);
 
         TextView name = v.findViewById(R.id.cardName);
-        String label = d.bankName + (d.card4.isEmpty() ? " Card" : " \u2022\u2022\u2022\u2022 " + d.card4);
+        String label = d.bankName + (d.card4 == null || d.card4.isEmpty()
+            ? " Card" : " \u2022\u2022\u2022\u2022 " + d.card4);
         name.setText(label);
 
         TextView pill = v.findViewById(R.id.statusPill);
         if ("PAID".equals(d.status)) {
             pill.setText("Paid");
             pill.setBackgroundResource(R.drawable.pill_credit);
-            pill.setTextColor(Color.parseColor("#2E7D32"));
+            pill.setTextColor(ctx.getColor(R.color.credit));
         } else {
             pill.setText("Outstanding");
             pill.setBackgroundResource(R.drawable.pill_debit);
-            pill.setTextColor(Color.parseColor("#C62828"));
+            pill.setTextColor(ctx.getColor(R.color.debit));
         }
 
         TextView dueLine = v.findViewById(R.id.dueLine);
@@ -64,10 +66,10 @@ public class DueAdapter extends BaseAdapter {
         } else if ("OUTSTANDING".equals(d.status)
                 && d.dueTs < System.currentTimeMillis()) {
             dateLine.setText("Due date was " + df.format(new Date(d.dueTs)) + " \u2014 missed");
-            dateLine.setTextColor(Color.parseColor("#C62828"));
+            dateLine.setTextColor(ctx.getColor(R.color.debit));
         } else {
             dateLine.setText("Due by " + df.format(new Date(d.dueTs)));
-            dateLine.setTextColor(Color.parseColor("#757575"));
+            dateLine.setTextColor(ctx.getColor(R.color.muted));
         }
         return v;
     }

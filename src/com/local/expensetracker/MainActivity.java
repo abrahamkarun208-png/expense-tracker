@@ -9,11 +9,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CalendarView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -26,18 +29,23 @@ import java.util.Locale;
 public class MainActivity extends Activity {
 
     private static final int REQ_SMS = 1001;
+    private static final long DAY_MS = 86400000L;
 
     private DbHelper db;
     private ListView txnList;
     private ListView dueList;
     private TextView totalView;
     private TextView totalLabel;
+    private TextView txnCountView;
     private TextView permNotice;
     private Button permButton;
-    private Button btnDay, btnWeek, btnMonth;
+    private Button btnDay, btnWeek, btnMonth, btnCal;
+    private LinearLayout calCard;
+    private CalendarView calView;
     private TextView emptyTxns;
 
-    private int period = 0; // 0=day, 1=week, 2=month
+    private int period = 0; // 0=day, 1=week, 2=month, 3=calendar
+    private long calDayMs;
     private static long lastImportMs = 0;
 
     @Override
@@ -50,11 +58,28 @@ public class MainActivity extends Activity {
         dueList = findViewById(R.id.dueList);
         totalView = findViewById(R.id.totalView);
         totalLabel = findViewById(R.id.totalLabel);
+        txnCountView = findViewById(R.id.txnCountView);
         permNotice = findViewById(R.id.permNotice);
         permButton = findViewById(R.id.permButton);
         btnDay = findViewById(R.id.btnDay);
         btnWeek = findViewById(R.id.btnWeek);
         btnMonth = findViewById(R.id.btnMonth);
+        btnCal = findViewById(R.id.btnCal);
+        calCard = findViewById(R.id.calCard);
+        calView = findViewById(R.id.calView);
+
+        calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
+        calView.setMaxDate(System.currentTimeMillis());
+        calView.setOnDateChangeListener(new CalendarView.OnDateChangeListener() {
+            @Override
+            public void onSelectedDayChange(CalendarView view, int y, int m, int d) {
+                Calendar c = Calendar.getInstance();
+                c.set(y, m, d, 0, 0, 0);
+                c.set(Calendar.MILLISECOND, 0);
+                calDayMs = c.getTimeInMillis();
+                refreshUi();
+            }
+        });
 
         emptyTxns = new TextView(this);
         emptyTxns.setText(R.string.no_txns);
@@ -66,7 +91,8 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) {
                 if (v == btnDay) period = 0;
                 else if (v == btnWeek) period = 1;
-                else period = 2;
+                else if (v == btnMonth) period = 2;
+                else period = 3;
                 stylePeriodButtons();
                 refreshUi();
             }
@@ -74,6 +100,7 @@ public class MainActivity extends Activity {
         btnDay.setOnClickListener(periodClick);
         btnWeek.setOnClickListener(periodClick);
         btnMonth.setOnClickListener(periodClick);
+        btnCal.setOnClickListener(periodClick);
         stylePeriodButtons();
 
         permButton.setOnClickListener(new View.OnClickListener() {
@@ -159,9 +186,19 @@ public class MainActivity extends Activity {
     }
 
     private void stylePeriodButtons() {
-        btnDay.setAlpha(period == 0 ? 1f : 0.55f);
-        btnWeek.setAlpha(period == 1 ? 1f : 0.55f);
-        btnMonth.setAlpha(period == 2 ? 1f : 0.55f);
+        Button[] btns = {btnDay, btnWeek, btnMonth, btnCal};
+        int selBg = R.drawable.tab_selected;
+        int selFg = 0xFFFFFFFF;
+        int unselFg = getColor(R.color.ink);
+        for (int i = 0; i < btns.length; i++) {
+            if (i == period) {
+                btns[i].setBackgroundResource(selBg);
+                btns[i].setTextColor(selFg);
+            } else {
+                btns[i].setBackgroundResource(0);
+                btns[i].setTextColor(unselFg);
+            }
+        }
     }
 
     /** Bulk import from the SMS inbox on a worker thread. */
@@ -207,30 +244,44 @@ public class MainActivity extends Activity {
     }
 
     private void refreshUi() {
-        long cutoff;
+        long now = System.currentTimeMillis();
+        long start, end;
         String label;
-        Calendar cal = Calendar.getInstance();
         if (period == 0) {
-            cal.set(Calendar.HOUR_OF_DAY, 0);
-            cal.set(Calendar.MINUTE, 0);
-            cal.set(Calendar.SECOND, 0);
-            cal.set(Calendar.MILLISECOND, 0);
-            cutoff = cal.getTimeInMillis();
+            start = TxnGrouper.dayStart(now);
+            end = now;
             label = "Spent today";
         } else if (period == 1) {
-            cutoff = System.currentTimeMillis() - 7L * 24 * 3600 * 1000;
+            start = TxnGrouper.dayStart(now - 6 * DAY_MS);
+            end = now;
             label = "Spent in the last 7 days";
-        } else {
-            cutoff = System.currentTimeMillis() - 30L * 24 * 3600 * 1000;
+        } else if (period == 2) {
+            start = TxnGrouper.dayStart(now - 29 * DAY_MS);
+            end = now;
             label = "Spent in the last 30 days";
+        } else {
+            start = calDayMs;
+            end = calDayMs + DAY_MS - 1;
+            label = "Spent on " + new SimpleDateFormat("dd MMM",
+                Locale.getDefault()).format(new Date(calDayMs));
         }
+        calCard.setVisibility(period == 3 ? View.VISIBLE : View.GONE);
 
-        double total = db.sumSpentSince(cutoff);
+        double total = db.sumSpentBetween(start, end);
         totalView.setText("\u20B9" + String.format(Locale.US, "%,.0f", total));
         totalLabel.setText(label);
 
-        List<Transaction> txns = db.getTxnsSince(cutoff);
-        txnList.setAdapter(new TxnAdapter(this, txns));
+        List<Transaction> txns = db.getTxnsBetween(start, end);
+        int n = txns.size();
+        txnCountView.setText(n == 1 ? "1 transaction" : n + " transactions");
+
+        List<Object> rows;
+        if (period == 1 || period == 2) {
+            rows = TxnGrouper.groupByDay(txns);
+        } else {
+            rows = new ArrayList<Object>(txns);
+        }
+        txnList.setAdapter(new TxnAdapter(this, rows));
 
         List<CardDue> dues = db.getDues();
         dueList.setAdapter(new DueAdapter(this, dues));

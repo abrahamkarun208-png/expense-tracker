@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="green_dark">#1B5E20</color>
-    <color name="green">#2E7D32</color>
-    <color name="red">#C62828</color>
-    <color name="blue">#1565C0</color>
-    <color name="amber">#EF6C00</color>
-    <color name="grey">#757575</color>
-    <color name="light_grey">#F5F5F5</color>
-    <color name="pill_paid_bg">#E8F5E9</color>
-    <color name="pill_due_bg">#FFEBEE</color>
+    <color name="primary">#14532D</color>
+    <color name="primary_dark">#0D3B21</color>
+    <color name="background">#EDF1EF</color>
+    <color name="card">#FFFFFF</color>
+    <color name="ink">#17251D</color>
+    <color name="muted">#64748B</color>
+    <color name="tab_bar_bg">#DCE4DE</color>
+    <color name="debit">#DC2626</color>
+    <color name="credit">#16A34A</color>
+    <color name="transfer">#B45309</color>
+    <color name="pill_debit_bg">#FEE2E2</color>
+    <color name="pill_credit_bg">#DCFCE7</color>
+    <color name="pill_transfer_bg">#FEF3C7</color>
+    <color name="pill_due_bg">#FEE2E2</color>
+    <color name="pill_paid_bg">#DCFCE7</color>
+    <color name="badge_bg">#E7F0EA</color>
 </resources>

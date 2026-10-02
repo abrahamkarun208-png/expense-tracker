@@ -77,12 +77,39 @@ public class DbHelper extends SQLiteOpenHelper {
     }
 
     public double sumSpentSince(long cutoffTs) {
+        return sumSpentBetween(cutoffTs, Long.MAX_VALUE);
+    }
+
+    public double sumSpentBetween(long startTs, long endTs) {
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT SUM(amount) FROM txns WHERE ts>=? AND type IN ('DEBIT','CARD_SPEND')",
-            new String[]{String.valueOf(cutoffTs)});
+            "SELECT SUM(amount) FROM txns WHERE ts>=? AND ts<=?"
+                + " AND type IN ('DEBIT','CARD_SPEND')",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
         double s = c.moveToFirst() && !c.isNull(0) ? c.getDouble(0) : 0;
         c.close();
         return s;
+    }
+
+    public List<Transaction> getTxnsBetween(long startTs, long endTs) {
+        List<Transaction> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4 FROM txns"
+                + " WHERE ts>=? AND ts<=? ORDER BY ts DESC",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        while (c.moveToNext()) {
+            Transaction t = new Transaction();
+            t.key = c.getString(0);
+            t.bankCode = c.getString(1);
+            t.bankName = c.getString(2);
+            t.amount = c.getDouble(3);
+            t.type = c.getString(4);
+            t.merchant = c.getString(5);
+            t.ts = c.getLong(6);
+            t.card4 = c.getString(7);
+            out.add(t);
+        }
+        c.close();
+        return out;
     }
 
     public void upsertDue(CardDue d) {
