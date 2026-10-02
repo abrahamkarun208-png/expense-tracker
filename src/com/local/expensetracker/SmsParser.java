@@ -161,6 +161,7 @@ public class SmsParser {
 
     private static String classify(String low, String body, String addr) {
         boolean cardCtx = low.contains("credit card") || !extractCard4(body).isEmpty();
+        boolean upiCtx = low.contains("upi");
         boolean debitW = low.contains("debited") || low.contains("spent") || low.contains("purchase")
             || low.contains("paid") || low.contains("withdrawn") || low.contains("charged")
             || low.contains("txn of");
@@ -173,6 +174,10 @@ public class SmsParser {
         if (transferW && (debitW || low.contains("transfer"))) return "TRANSFER";
         if (debitW && !creditW) return "DEBIT";
         if (creditW && !debitW) return "CREDIT";
+        // UPI "transaction of Rs X ... is successful" (money sent, no explicit debit verb)
+        if (upiCtx && (low.contains("transaction of") || low.contains("payment of"))
+                && (low.contains("successful") || low.contains("success"))
+                && !creditW) return "DEBIT";
         if (debitW) return "DEBIT";
         if (creditW) return "CREDIT";
         return null;
@@ -196,12 +201,15 @@ public class SmsParser {
                 continue;
             }
             int best = s.length();
-            for (String cut : new String[]{" on ", " via ", " ref ", " txn ", ","}) {
+            for (String cut : new String[]{" on ", " via ", " is ", " was ", " has ",
+                                           " ref ", " txn ", ","}) {
                 int i = l.indexOf(cut);
                 if (i > 1 && i < best) best = i;
             }
             s = s.substring(0, best).trim();
             if (s.length() > 34) s = s.substring(0, 34).trim();
+            // Drop noise prefixes like "VPA " / "UPI/".
+            s = s.replaceFirst("(?i)^vpa\\s+", "").replaceFirst("(?i)^upi/", "");
             if (s.length() >= 2) return s;
         }
         return "";
@@ -213,18 +221,35 @@ public class SmsParser {
             "(?i)(?:due\\s+(?:by|date|on)|payment\\s+due\\s+date)\\s*:?\\s*(\\d{1,2}[-/]\\d{1,2}[-/]\\d{2,4})",
             "(?i)(?:due\\s+(?:by|date|on)|payment\\s+due\\s+date)\\s*:?\\s*([A-Za-z]{3,9}\\s+\\d{1,2},?\\s+\\d{4})",
         };
-        String[] fmts = {"dd-MMM-yyyy", "dd-MMM-yy", "dd/MM/yyyy", "dd/MM/yy",
-                         "dd-MM-yyyy", "dd-MM-yy", "MMM dd yyyy", "MMM dd, yyyy"};
+        String[] dashFmts = {"dd-MMM-yyyy", "dd-MM-yyyy"};
+        String[] dashFmts2 = {"dd-MMM-yy", "dd-MM-yy"};
+        String[] mdyFmts = {"MMM dd yyyy", "MMM dd, yyyy"};
         for (String reg : regs) {
             Matcher m = Pattern.compile(reg).matcher(body);
             if (m.find()) {
                 String ds = m.group(1).replace("/", "-").replace(",", "").trim()
                         .replaceAll("\\s+", " ");
-                for (String f : fmts) {
-                    try {
-                        Date d = new SimpleDateFormat(f, Locale.ENGLISH).parse(ds);
-                        if (d != null) return d.getTime();
-                    } catch (ParseException ignored) {}
+                // Pick 2- vs 4-digit year formats from the actual year token,
+                // so "26" can never be read as the year 26 AD.
+                String[] parts = ds.split("[- ]");
+                String yearTok = parts[parts.length - 1];
+                String[][] ordered;
+                if (yearTok.length() == 2) {
+                    ordered = new String[][]{dashFmts2, mdyFmts};
+                } else if (yearTok.length() == 4) {
+                    ordered = new String[][]{dashFmts, mdyFmts};
+                } else {
+                    ordered = new String[][]{dashFmts, dashFmts2, mdyFmts};
+                }
+                for (String[] fmts : ordered) {
+                    for (String f : fmts) {
+                        try {
+                            SimpleDateFormat sdf = new SimpleDateFormat(f, Locale.ENGLISH);
+                            sdf.setLenient(false);
+                            Date d = sdf.parse(ds);
+                            if (d != null) return d.getTime();
+                        } catch (ParseException ignored) {}
+                    }
                 }
             }
         }

@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private TextView emptyTxns;
 
     private int period = 0; // 0=day, 1=week, 2=month
+    private static long lastImportMs = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -101,7 +102,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (hasSms()) refreshUi();
+        if (hasSms()) {
+            // Re-scan when coming back (e.g. permission was granted in Settings),
+            // throttled so it doesn't run on every quick switch.
+            if (System.currentTimeMillis() - lastImportMs > 30_000) {
+                importSms();
+            } else {
+                refreshUi();
+            }
+        }
     }
 
     @Override
@@ -157,6 +166,7 @@ public class MainActivity extends Activity {
 
     /** Bulk import from the SMS inbox on a worker thread. */
     private void importSms() {
+        lastImportMs = System.currentTimeMillis();
         Toast.makeText(this, "Reading SMS\u2026", Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
             @Override public void run() {

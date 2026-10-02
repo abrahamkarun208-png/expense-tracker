@@ -46,15 +46,20 @@ echo "== zipalign =="
 $BT/zipalign -f 4 build/app-unsigned.apk build/app-aligned.apk
 
 echo "== keystore =="
-if [ ! -f build/debug.keystore ]; then
-  $JAVA_HOME/bin/keytool -genkeypair -keystore build/debug.keystore \
+# Persistent key: build/ is wiped on every build, so the signing key lives
+# outside it. Same key => new APKs install as updates over previous ones.
+KEYSTORE=$HOME/.expense-tracker-keys/debug.keystore
+if [ ! -f "$KEYSTORE" ]; then
+  mkdir -p "$(dirname "$KEYSTORE")"
+  $JAVA_HOME/bin/keytool -genkeypair -keystore "$KEYSTORE" \
     -alias androiddebugkey -storepass android -keypass android \
     -keyalg RSA -keysize 2048 -validity 10950 \
     -dname "CN=Android Debug,O=Android,C=US"
+  chmod 600 "$KEYSTORE"
 fi
 
 echo "== apksigner =="
-$BT/apksigner sign --ks build/debug.keystore \
+$BT/apksigner sign --ks "$KEYSTORE" \
   --ks-pass pass:android --key-pass pass:android \
   --out build/expense-tracker.apk build/app-aligned.apk
 
