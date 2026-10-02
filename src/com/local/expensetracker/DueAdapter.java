@@ -30,6 +30,14 @@ public class DueAdapter extends BaseAdapter {
     @Override public Object getItem(int p) { return items.get(p); }
     @Override public long getItemId(int p) { return p; }
 
+    /** Renders all rows into a LinearLayout (for use inside a ScrollView). */
+    public void populate(android.widget.LinearLayout container) {
+        container.removeAllViews();
+        for (int i = 0; i < getCount(); i++) {
+            container.addView(getView(i, null, container));
+        }
+    }
+
     @Override
     public View getView(int pos, View convertView, ViewGroup parent) {
         View v = convertView;

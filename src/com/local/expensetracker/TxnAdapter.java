@@ -41,6 +41,14 @@ public class TxnAdapter extends BaseAdapter {
         return items.get(p) instanceof TxnGrouper.DayHeader ? TYPE_HEADER : TYPE_TXN;
     }
 
+    /** Renders all rows into a LinearLayout (for use inside a ScrollView). */
+    public void populate(android.widget.LinearLayout container) {
+        container.removeAllViews();
+        for (int i = 0; i < getCount(); i++) {
+            container.addView(getView(i, null, container));
+        }
+    }
+
     @Override
     public View getView(int pos, View convertView, ViewGroup parent) {
         if (getItemViewType(pos) == TYPE_HEADER) {

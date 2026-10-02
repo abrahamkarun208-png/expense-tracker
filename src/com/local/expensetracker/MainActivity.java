@@ -11,7 +11,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.CalendarView;
 import android.widget.LinearLayout;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,8 +31,8 @@ public class MainActivity extends Activity {
     private static final long DAY_MS = 86400000L;
 
     private DbHelper db;
-    private ListView txnList;
-    private ListView dueList;
+    private LinearLayout txnContainer;
+    private LinearLayout dueContainer;
     private TextView totalView;
     private TextView totalLabel;
     private TextView txnCountView;
@@ -43,6 +42,7 @@ public class MainActivity extends Activity {
     private LinearLayout calCard;
     private CalendarView calView;
     private TextView emptyTxns;
+    private TextView emptyDues;
 
     private int period = 0; // 0=day, 1=week, 2=month, 3=calendar
     private long calDayMs;
@@ -54,8 +54,10 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         db = new DbHelper(this);
 
-        txnList = findViewById(R.id.txnList);
-        dueList = findViewById(R.id.dueList);
+        txnContainer = findViewById(R.id.txnContainer);
+        dueContainer = findViewById(R.id.dueContainer);
+        emptyTxns = findViewById(R.id.emptyTxns);
+        emptyDues = findViewById(R.id.emptyDues);
         totalView = findViewById(R.id.totalView);
         totalLabel = findViewById(R.id.totalLabel);
         txnCountView = findViewById(R.id.txnCountView);
@@ -80,12 +82,6 @@ public class MainActivity extends Activity {
                 refreshUi();
             }
         });
-
-        emptyTxns = new TextView(this);
-        emptyTxns.setText(R.string.no_txns);
-        emptyTxns.setPadding(16, 32, 16, 32);
-        txnList.setEmptyView(emptyTxns);
-        ((android.view.ViewGroup) txnList.getParent()).addView(emptyTxns);
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -281,9 +277,11 @@ public class MainActivity extends Activity {
         } else {
             rows = new ArrayList<Object>(txns);
         }
-        txnList.setAdapter(new TxnAdapter(this, rows));
+        new TxnAdapter(this, rows).populate(txnContainer);
+        emptyTxns.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
 
         List<CardDue> dues = db.getDues();
-        dueList.setAdapter(new DueAdapter(this, dues));
+        new DueAdapter(this, dues).populate(dueContainer);
+        emptyDues.setVisibility(dues.isEmpty() ? View.VISIBLE : View.GONE);
     }
 }
