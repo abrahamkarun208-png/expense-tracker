@@ -172,6 +172,9 @@ public class SmsParser {
 
         if (cardCtx && debitW) return "CARD_SPEND";
         if (transferW && (debitW || low.contains("transfer"))) return "TRANSFER";
+        // HDFC UPI debit: "Sent Rs.1860.00 From HDFC Bank A/C *9066 To ..."
+        // (anchored at the start so "sent by ..." in credit SMS can't misfire)
+        if (low.trim().startsWith("sent ") && !creditW) return "DEBIT";
         if (debitW && !creditW) return "DEBIT";
         if (creditW && !debitW) return "CREDIT";
         // UPI "transaction of Rs X ... is successful" (money sent, no explicit debit verb)
@@ -184,6 +187,8 @@ public class SmsParser {
     }
 
     private static String extractMerchant(String body) {
+        // Multi-line bank SMS: treat newlines as spaces so cut-words work.
+        body = body.replace('\n', ' ').replace('\r', ' ');
         Matcher k = MERCHANT_KW.matcher(body);
         while (k.find()) {
             int start = k.end();
