@@ -33,7 +33,7 @@ public class SmsParser {
 
     // {code, full name, sender-id fragments...}
     private static final String[][] BANKS = {
-        {"HDFC", "HDFC Bank", "HDFCBK", "HDFCBNK", "HDFCBAN"},
+        {"HDFC", "HDFC Bank", "HDFCBK", "HDFCBNK", "HDFCBAN", "PAYZAP"},
         {"SBI", "State Bank of India", "SBIBNK", "SBIINB", "SBIPSG", "SBIYONO", "SBISMS"},
         {"ICICI", "ICICI Bank", "ICICIB", "ICICIBK", "ICICIT"},
         {"AXIS", "Axis Bank", "AXISBK", "AXISBNK"},
@@ -60,6 +60,8 @@ public class SmsParser {
         {"KBL", "Karnataka Bank", "KBLBNK", "KTKBANK", "KARBANK", "KARNATABANK"},
         {"BANDHAN", "Bandhan Bank", "BDNSMS", "BANDHN", "BANDHAN"},
         {"EQUITAS", "Equitas Small Finance", "EQUTAS", "EQUITA"},
+        {"ESAF", "ESAF Small Finance Bank", "ESAFSF", "ESAF"},
+        {"IPPB", "India Post Payments Bank", "IPBMSG", "IPPB"},
     };
 
     private static final Pattern AMOUNT =
