@@ -52,6 +52,11 @@ public class SpendCalendarView extends LinearLayout {
     public int getYear() { return year; }
     public int getMonth() { return month; }
 
+    public boolean hasSpending(long dayStart) {
+        Double v = spendByDay.get(dayStart);
+        return v != null && v > 0;
+    }
+
     public void showCurrentMonth() {
         Calendar c = Calendar.getInstance();
         year = c.get(Calendar.YEAR);

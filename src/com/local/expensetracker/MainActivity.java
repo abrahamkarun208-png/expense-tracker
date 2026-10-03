@@ -93,6 +93,7 @@ public class MainActivity extends Activity {
             @Override public void onDaySelect(long dayStartMs) {
                 calDayMs = dayStartMs;
                 refreshUi();
+                if (spendCal.hasSpending(dayStartMs)) showDayMerchants(dayStartMs);
             }
         });
         pieCard = findViewById(R.id.pieCard);
@@ -102,7 +103,8 @@ public class MainActivity extends Activity {
             @Override public void onSliceClick(int index) {
                 if (index >= 0 && index < pieSlices.size()
                         && index < pieMembers.size()) {
-                    showMerchantDetail(pieSlices.get(index), pieMembers.get(index));
+                    showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
+                        period == 1 ? "last 7 days" : "last 30 days");
                 }
             }
         });
@@ -408,7 +410,8 @@ public class MainActivity extends Activity {
         row.setClickable(true);
         row.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                showMerchantDetail(pieSlices.get(index), pieMembers.get(index));
+                showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
+                        period == 1 ? "last 7 days" : "last 30 days");
             }
         });
 
@@ -440,10 +443,125 @@ public class MainActivity extends Activity {
         pieLegend.addView(row);
     }
 
+    /** Calendar day tap: where the money went that day, by merchant. */
+    private void showDayMerchants(final long dayStart) {
+        List<Transaction> txns = db.getTxnsBetween(dayStart, dayStart + DAY_MS - 1);
+        Map<String, List<Transaction>> byMerchant = new LinkedHashMap<String, List<Transaction>>();
+        for (Transaction t : txns) {
+            if (!"DEBIT".equals(t.type) && !"CARD_SPEND".equals(t.type)) continue;
+            String m = t.merchant == null || t.merchant.isEmpty() ? "Unknown" : t.merchant;
+            if (!byMerchant.containsKey(m)) {
+                byMerchant.put(m, new ArrayList<Transaction>());
+            }
+            byMerchant.get(m).add(t);
+        }
+        final List<Map.Entry<String, List<Transaction>>> entries =
+            new ArrayList<Map.Entry<String, List<Transaction>>>(byMerchant.entrySet());
+        Collections.sort(entries,
+            new Comparator<Map.Entry<String, List<Transaction>>>() {
+                @Override public int compare(Map.Entry<String, List<Transaction>> a,
+                                             Map.Entry<String, List<Transaction>> b) {
+                    return Double.compare(sumOf(b.getValue()), sumOf(a.getValue()));
+                }
+            });
+        double total = 0;
+        for (Map.Entry<String, List<Transaction>> e : entries) total += sumOf(e.getValue());
+        if (entries.isEmpty()) return;
+        final double dayTotal = total;
+
+        final String dateStr = new SimpleDateFormat("dd MMM yyyy",
+            Locale.getDefault()).format(new Date(dayStart));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText("Where you spent");
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(getColor(R.color.ink));
+
+        int n = 0;
+        for (Map.Entry<String, List<Transaction>> e : entries) n += e.getValue().size();
+        TextView sub = new TextView(this);
+        sub.setText(dateStr + " \u00B7 " + PieChartView.money(dayTotal)
+            + " \u00B7 " + n + (n == 1 ? " transaction" : " transactions"));
+        sub.setTextSize(13);
+        sub.setTextColor(getColor(R.color.muted));
+        sub.setPadding(0, dp(4), 0, dp(12));
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        for (int i = 0; i < entries.size(); i++) {
+            final Map.Entry<String, List<Transaction>> e = entries.get(i);
+            final double mTotal = sumOf(e.getValue());
+            final int color = PIE_COLORS[i % PIE_COLORS.length];
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            int vpad = dp(7);
+            row.setPadding(0, vpad, 0, vpad);
+            row.setClickable(true);
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    showMerchantDetail(
+                        new PieChartView.Slice(e.getKey(), mTotal, color),
+                        e.getValue(), dateStr);
+                }
+            });
+
+            TextView dot = new TextView(this);
+            dot.setText("\u25CF");
+            dot.setTextColor(color);
+            dot.setTextSize(13);
+
+            TextView name = new TextView(this);
+            String label = e.getKey().length() > 18
+                ? e.getKey().substring(0, 17) + "\u2026" : e.getKey();
+            name.setText(label);
+            name.setTextSize(14);
+            name.setTextColor(getColor(R.color.ink));
+            LinearLayout.LayoutParams lp =
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            int hpad = dp(8);
+            lp.setMargins(hpad, 0, hpad, 0);
+            name.setLayoutParams(lp);
+
+            TextView amt = new TextView(this);
+            int pct = dayTotal > 0 ? (int) Math.round(mTotal / dayTotal * 100) : 0;
+            amt.setText(PieChartView.money(mTotal) + " \u00B7 " + pct + "%");
+            amt.setTextSize(12);
+            amt.setTextColor(getColor(R.color.muted));
+
+            row.addView(dot);
+            row.addView(name);
+            row.addView(amt);
+            list.addView(row);
+        }
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(list, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(340)));
+
+        root.addView(title);
+        root.addView(sub);
+        root.addView(sv);
+
+        new AlertDialog.Builder(this)
+            .setView(root)
+            .setPositiveButton("Close", null)
+            .show();
+    }
+
     /** Drill-down: this merchant's transactions, grouped by day. */
-    private void showMerchantDetail(PieChartView.Slice s, List<Transaction> members) {
+    private void showMerchantDetail(PieChartView.Slice s, List<Transaction> members,
+                                    String periodName) {
         double total = sumOf(members);
-        String periodName = period == 1 ? "last 7 days" : "last 30 days";
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
