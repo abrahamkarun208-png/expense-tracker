@@ -126,6 +126,22 @@ public class DbHelper extends SQLiteOpenHelper {
         return s;
     }
 
+    /** Spending per day (DEBIT + CARD_SPEND), keyed by day-start millis. */
+    public java.util.Map<Long, Double> getDailySpending(long startTs, long endTs) {
+        java.util.Map<Long, Double> out = new java.util.HashMap<Long, Double>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT ts, amount FROM txns WHERE ts>=? AND ts<=?"
+                + " AND type IN ('DEBIT','CARD_SPEND')",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        while (c.moveToNext()) {
+            long day = TxnGrouper.dayStart(c.getLong(0));
+            Double v = out.get(day);
+            out.put(day, (v == null ? 0 : v) + c.getDouble(1));
+        }
+        c.close();
+        return out;
+    }
+
     public List<Transaction> getTxnsBetween(long startTs, long endTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(

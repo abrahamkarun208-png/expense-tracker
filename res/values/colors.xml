@@ -16,4 +16,5 @@
     <color name="pill_due_bg">#FEE2E2</color>
     <color name="pill_paid_bg">#DCFCE7</color>
     <color name="badge_bg">#E7F0EA</color>
+    <color name="spend_dot">#F59E0B</color>
 </resources>

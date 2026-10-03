@@ -198,11 +198,10 @@
             android:padding="8dp"
             android:layout_marginTop="12dp">
 
-            <CalendarView
-                android:id="@+id/calView"
+            <com.local.expensetracker.SpendCalendarView
+                android:id="@+id/spendCal"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:showWeekNumber="false" />
+                android:layout_height="wrap_content" />
         </LinearLayout>
 
         <TextView style="@style/SectionHeader"

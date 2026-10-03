@@ -15,7 +15,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.CalendarView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -51,7 +50,7 @@ public class MainActivity extends Activity {
     private Button permButton;
     private Button btnDay, btnWeek, btnMonth, btnCal;
     private LinearLayout calCard;
-    private CalendarView calView;
+    private SpendCalendarView spendCal;
     private LinearLayout pieCard;
     private PieChartView pieChart;
     private LinearLayout pieLegend;
@@ -89,7 +88,13 @@ public class MainActivity extends Activity {
         btnMonth = findViewById(R.id.btnMonth);
         btnCal = findViewById(R.id.btnCal);
         calCard = findViewById(R.id.calCard);
-        calView = findViewById(R.id.calView);
+        spendCal = findViewById(R.id.spendCal);
+        spendCal.setOnDaySelectListener(new SpendCalendarView.OnDaySelectListener() {
+            @Override public void onDaySelect(long dayStartMs) {
+                calDayMs = dayStartMs;
+                refreshUi();
+            }
+        });
         pieCard = findViewById(R.id.pieCard);
         pieChart = findViewById(R.id.pieChart);
         pieLegend = findViewById(R.id.pieLegend);
@@ -105,24 +110,18 @@ public class MainActivity extends Activity {
         db.removeNearDuplicates();
 
         calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
-        calView.setMaxDate(System.currentTimeMillis());
-        calView.setOnDateChangeListener(new CalendarView.OnDateChangeListener() {
-            @Override
-            public void onSelectedDayChange(CalendarView view, int y, int m, int d) {
-                Calendar c = Calendar.getInstance();
-                c.set(y, m, d, 0, 0, 0);
-                c.set(Calendar.MILLISECOND, 0);
-                calDayMs = c.getTimeInMillis();
-                refreshUi();
-            }
-        });
+        spendCal.showCurrentMonth();
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
                 if (v == btnDay) period = 0;
                 else if (v == btnWeek) period = 1;
                 else if (v == btnMonth) period = 2;
-                else period = 3;
+                else {
+                    period = 3;
+                    calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
+                    spendCal.showCurrentMonth();
+                }
                 stylePeriodButtons();
                 refreshUi();
             }
@@ -290,6 +289,16 @@ public class MainActivity extends Activity {
             end = now;
             label = "Spent in the last 30 days";
         } else {
+            // Calendar: use the month currently displayed in the custom view.
+            int y = spendCal.getYear();
+            int mo = spendCal.getMonth();
+            Calendar mc = Calendar.getInstance();
+            mc.set(y, mo, 1, 0, 0, 0);
+            mc.set(Calendar.MILLISECOND, 0);
+            long mStart = mc.getTimeInMillis();
+            mc.add(Calendar.MONTH, 1);
+            long mEnd = mc.getTimeInMillis() - 1;
+            spendCal.setState(y, mo, calDayMs, db.getDailySpending(mStart, mEnd));
             start = calDayMs;
             end = calDayMs + DAY_MS - 1;
             label = "Spent on " + new SimpleDateFormat("dd MMM",
