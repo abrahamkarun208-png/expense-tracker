@@ -51,6 +51,7 @@ public class SmsParser {
         {"CUB", "City Union Bank", "CUBMBL"},
         {"RBL", "RBL Bank", "RBLBNK", "RBLCRD"},
         {"AUBANK", "AU Small Finance", "AUBANK"},
+        {"SC", "Standard Chartered", "SCBANK", "STANCHART"},
     };
 
     private static final Pattern AMOUNT =

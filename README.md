@@ -8,9 +8,10 @@ spending splits — with **no servers, no accounts, and no internet access**.
 
 - Reads the SMS inbox (`content://sms/inbox`) and bulk-imports bank messages
 - Captures incoming bank SMS live via `SmsReceiver`
-- Identifies 18 Indian banks from sender IDs and message text (HDFC, SBI,
+- Identifies 19 Indian banks from sender IDs and message text (HDFC, SBI,
   ICICI, Axis, Kotak, PNB, Bank of Baroda, Canara, Yes Bank, IDFC, IDBI,
-  Union Bank, IndusInd, Federal, IOB, CUB, RBL, AU Small Finance)
+  Union Bank, IndusInd, Federal, IOB, CUB, RBL, AU Small Finance,
+  Standard Chartered)
 - Classifies transactions: **Debit / Credit / Transfer** (own-account) /
   **Card Spend** (kept separate)
 - Detects credit-card statements ("Total Amt Due / Min Amt Due / due by")
