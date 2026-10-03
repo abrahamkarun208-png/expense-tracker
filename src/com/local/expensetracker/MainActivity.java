@@ -126,6 +126,12 @@ public class MainActivity extends Activity {
 
         db.removeNearDuplicates();
 
+        // Footer shows the version so a bug report can name it.
+        try {
+            String vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            ((TextView) findViewById(R.id.appVersion)).setText("\u00A9 2026 Chris \u00B7 v" + vn);
+        } catch (Exception ignored) {}
+
         calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
         spendCal.showCurrentMonth();
 
@@ -165,7 +171,10 @@ public class MainActivity extends Activity {
         findViewById(R.id.rescan).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 if (hasSms()) {
-                    importSms();
+                    // Manual rescan always re-reads the whole inbox, so any
+                    // message missed earlier (new bank, parser update, or an
+                    // interrupted scan) gets another chance.
+                    importSms(true);
                 } else {
                     askPermission();
                 }
@@ -175,7 +184,7 @@ public class MainActivity extends Activity {
         if (hasSms()) {
             hidePermUi();
             ensureReceivePermission();
-            importSms();
+            importSms(false);
         } else {
             showPermUi();
             refreshUi();
@@ -203,7 +212,7 @@ public class MainActivity extends Activity {
             // Incremental scan: only messages since the last scan are read,
             // so this is cheap enough to run on every return to the app.
             // New bank SMS are picked up without any manual rescan.
-            importSms();
+            importSms(false);
         }
     }
 
@@ -266,7 +275,7 @@ public class MainActivity extends Activity {
         if (code == REQ_SMS && results.length > 0
                 && results[0] == PackageManager.PERMISSION_GRANTED) {
             hidePermUi();
-            importSms();
+            importSms(true);
         } else {
             showPermUi();
             Toast.makeText(this, R.string.perm_needed, Toast.LENGTH_LONG).show();
@@ -308,13 +317,14 @@ public class MainActivity extends Activity {
     /**
      * Imports SMS from the inbox on a worker thread.
      *
-     * A full scan runs once per app version (a parser update can make
-     * previously-skipped messages parseable). Otherwise only messages newer
-     * than the last scan are read, with a 60s overlap, so returning to the
-     * app is cheap and never needs a manual rescan. Re-reads are harmless:
+     * A full scan runs once per app version and whenever the user taps
+     * RESCAN (a parser update can make previously-skipped messages
+     * parseable, and a manual rescan must never miss old messages).
+     * Otherwise only messages newer than the last scan are read, with a 60s
+     * overlap, so returning to the app is cheap. Re-reads are harmless:
      * already-imported messages are skipped by their dedup key.
      */
-    private void importSms() {
+    private void importSms(boolean forceFull) {
         lastImportMs = System.currentTimeMillis();
         final SharedPreferences prefs = getPreferences(MODE_PRIVATE);
         String curVer;
@@ -323,8 +333,8 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             curVer = "";
         }
-        final boolean full =
-            !curVer.equals(prefs.getString("last_full_scan_vn", ""));
+        final boolean full = forceFull
+            || !curVer.equals(prefs.getString("last_full_scan_vn", ""));
         final long since = full ? 0
             : Math.max(0, prefs.getLong("last_scan_date", 0) - 60_000);
         final String fCurVer = curVer;
@@ -348,7 +358,11 @@ public class MainActivity extends Activity {
                             String body = c.getString(2);
                             long ts = c.getLong(3);
                             if (addr != null && body != null) {
-                                Importer.importOne(db, addr, body, ts);
+                                try {
+                                    Importer.importOne(db, addr, body, ts);
+                                } catch (Exception e) {
+                                    // One bad message must never kill the scan.
+                                }
                                 count++;
                             }
                             if (ts > maxDate) maxDate = ts;
