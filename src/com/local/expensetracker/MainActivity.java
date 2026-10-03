@@ -186,8 +186,17 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (!receiverRegistered) {
-            registerReceiver(smsImportedReceiver,
-                new IntentFilter(SmsReceiver.ACTION_SMS_IMPORTED));
+            // Android 13+ requires an explicit exported/not-exported flag;
+            // the flag-less call throws SecurityException and kills the app.
+            // Our broadcast is package-scoped/internal: not exported.
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(smsImportedReceiver,
+                    new IntentFilter(SmsReceiver.ACTION_SMS_IMPORTED),
+                    Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(smsImportedReceiver,
+                    new IntentFilter(SmsReceiver.ACTION_SMS_IMPORTED));
+            }
             receiverRegistered = true;
         }
         if (hasSms()) {
