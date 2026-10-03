@@ -3,6 +3,7 @@
 package com.local.expensetracker;
 
 import android.content.BroadcastReceiver;
+import android.content.BroadcastReceiver.PendingResult;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -11,6 +12,10 @@ import android.telephony.SmsMessage;
 
 /** Receives incoming SMS and imports bank messages live. */
 public class SmsReceiver extends BroadcastReceiver {
+
+    /** Sent (package-scoped) after a live import so the open UI refreshes. */
+    public static final String ACTION_SMS_IMPORTED =
+        "com.local.expensetracker.SMS_IMPORTED";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -46,15 +51,25 @@ public class SmsReceiver extends BroadcastReceiver {
         final String fBody = body.toString();
         final long fTs = ts;
         final Context appCtx = context.getApplicationContext();
+        // goAsync: keep the broadcast alive until the import finishes,
+        // otherwise the process may be killed mid-write.
+        final PendingResult pr = goAsync();
         new Thread(new Runnable() {
             @Override
             public void run() {
-                DbHelper db = new DbHelper(appCtx);
                 try {
-                    Importer.importOne(db, fAddr, fBody, fTs);
-                    db.refreshOverdue(System.currentTimeMillis());
+                    DbHelper db = new DbHelper(appCtx);
+                    try {
+                        Importer.importOne(db, fAddr, fBody, fTs);
+                        db.refreshOverdue(System.currentTimeMillis());
+                    } finally {
+                        db.close();
+                    }
+                    Intent done = new Intent(ACTION_SMS_IMPORTED);
+                    done.setPackage(appCtx.getPackageName());
+                    appCtx.sendBroadcast(done);
                 } finally {
-                    db.close();
+                    pr.finish();
                 }
             }
         }).start();

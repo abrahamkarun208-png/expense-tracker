@@ -5,7 +5,11 @@ package com.local.expensetracker;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Typeface;
@@ -39,6 +43,7 @@ import java.util.Map;
 public class MainActivity extends Activity {
 
     private static final int REQ_SMS = 1001;
+    private static final int REQ_RECEIVE_SMS = 1002;
     private static final long DAY_MS = 86400000L;
 
     private DbHelper db;
@@ -65,6 +70,14 @@ public class MainActivity extends Activity {
     private int period = 0; // 0=day, 1=week, 2=month, 3=calendar
     private long calDayMs;
     private static long lastImportMs = 0;
+    private boolean receiverRegistered = false;
+
+    /** Refreshes the UI when the SMS receiver imports a message live. */
+    private final BroadcastReceiver smsImportedReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context ctx, Intent intent) {
+            refreshUi();
+        }
+    };
 
     private static final int[] PIE_COLORS = {
         0xFF14532D, 0xFF16A34A, 0xFF0EA5E9, 0xFFF59E0B, 0xFF8B5CF6, 0xFF64748B
@@ -161,6 +174,7 @@ public class MainActivity extends Activity {
 
         if (hasSms()) {
             hidePermUi();
+            ensureReceivePermission();
             importSms();
         } else {
             showPermUi();
@@ -171,14 +185,25 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (!receiverRegistered) {
+            registerReceiver(smsImportedReceiver,
+                new IntentFilter(SmsReceiver.ACTION_SMS_IMPORTED));
+            receiverRegistered = true;
+        }
         if (hasSms()) {
-            // Re-scan when coming back (e.g. permission was granted in Settings),
-            // throttled so it doesn't run on every quick switch.
-            if (System.currentTimeMillis() - lastImportMs > 30_000) {
-                importSms();
-            } else {
-                refreshUi();
-            }
+            // Incremental scan: only messages since the last scan are read,
+            // so this is cheap enough to run on every return to the app.
+            // New bank SMS are picked up without any manual rescan.
+            importSms();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (receiverRegistered) {
+            unregisterReceiver(smsImportedReceiver);
+            receiverRegistered = false;
         }
     }
 
@@ -205,8 +230,30 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * RECEIVE_SMS was added in v1.10 for live SMS import. Users who granted
+     * the SMS permission on an older version were never asked for it, so the
+     * SMS receiver silently gets nothing. Ask once; if denied, the
+     * incremental inbox scan on every resume still keeps data fresh.
+     */
+    private void ensureReceivePermission() {
+        if (Build.VERSION.SDK_INT < 23) return;
+        if (checkSelfPermission(Manifest.permission.RECEIVE_SMS)
+                == PackageManager.PERMISSION_GRANTED) return;
+        SharedPreferences p = getPreferences(MODE_PRIVATE);
+        if (p.getBoolean("asked_receive_sms", false)) return;
+        p.edit().putBoolean("asked_receive_sms", true).apply();
+        requestPermissions(
+            new String[]{Manifest.permission.RECEIVE_SMS}, REQ_RECEIVE_SMS);
+    }
+
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        if (code == REQ_RECEIVE_SMS) {
+            // Live SMS import permission: granted or not, the incremental
+            // scan keeps working. Nothing more to do.
+            return;
+        }
         if (code == REQ_SMS && results.length > 0
                 && results[0] == PackageManager.PERMISSION_GRANTED) {
             hidePermUi();
@@ -249,19 +296,43 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Bulk import from the SMS inbox on a worker thread. */
+    /**
+     * Imports SMS from the inbox on a worker thread.
+     *
+     * A full scan runs once per app version (a parser update can make
+     * previously-skipped messages parseable). Otherwise only messages newer
+     * than the last scan are read, with a 60s overlap, so returning to the
+     * app is cheap and never needs a manual rescan. Re-reads are harmless:
+     * already-imported messages are skipped by their dedup key.
+     */
     private void importSms() {
         lastImportMs = System.currentTimeMillis();
-        Toast.makeText(this, "Reading SMS\u2026", Toast.LENGTH_SHORT).show();
+        final SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        String curVer;
+        try {
+            curVer = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            curVer = "";
+        }
+        final boolean full =
+            !curVer.equals(prefs.getString("last_full_scan_vn", ""));
+        final long since = full ? 0
+            : Math.max(0, prefs.getLong("last_scan_date", 0) - 60_000);
+        final String fCurVer = curVer;
+        if (full) Toast.makeText(this, "Reading SMS\u2026", Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
             @Override public void run() {
                 int count = 0;
+                long maxDate = since;
                 Cursor c = null;
                 try {
+                    String sel = since > 0 ? "date > ?" : null;
+                    String[] args = since > 0
+                        ? new String[]{String.valueOf(since)} : null;
                     c = getContentResolver().query(
                         Uri.parse("content://sms/inbox"),
                         new String[]{"_id", "address", "body", "date"},
-                        null, null, "date DESC");
+                        sel, args, "date DESC");
                     if (c != null) {
                         while (c.moveToNext()) {
                             String addr = c.getString(1);
@@ -271,6 +342,7 @@ public class MainActivity extends Activity {
                                 Importer.importOne(db, addr, body, ts);
                                 count++;
                             }
+                            if (ts > maxDate) maxDate = ts;
                         }
                     }
                     db.refreshOverdue(System.currentTimeMillis());
@@ -279,12 +351,21 @@ public class MainActivity extends Activity {
                 } finally {
                     if (c != null) c.close();
                 }
+                SharedPreferences.Editor ed = prefs.edit();
+                if (maxDate > 0) ed.putLong("last_scan_date", maxDate);
+                if (full) ed.putString("last_full_scan_vn", fCurVer);
+                ed.apply();
                 final int done = count;
+                final boolean fFull = full;
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
                         refreshUi();
-                        Toast.makeText(MainActivity.this,
-                            "Scanned " + done + " messages", Toast.LENGTH_SHORT).show();
+                        if (fFull || done > 0) {
+                            Toast.makeText(MainActivity.this,
+                                fFull ? "Scanned " + done + " messages"
+                                      : "Checked " + done + " new messages",
+                                Toast.LENGTH_SHORT).show();
+                        }
                     }
                 });
             }
