@@ -40,6 +40,40 @@ public class DbHelper extends SQLiteOpenHelper {
         return exists;
     }
 
+    /**
+     * Near-duplicate check: same SMS can arrive with a slightly different
+     * timestamp (live receiver vs inbox scan, multipart parts, OEM dup rows).
+     * Treat same bank/amount/type/merchant within 60s as the same message.
+     */
+    public boolean hasNearDuplicate(String bankCode, double amount, String type,
+                                    String merchant, long ts) {
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT 1 FROM txns WHERE bankCode=? AND ABS(amount-?)<0.005 AND type=?"
+                + " AND COALESCE(merchant,'')=? AND ABS(ts-?)<=60000 LIMIT 1",
+            new String[]{bankCode, String.valueOf(amount), type,
+                         merchant == null ? "" : merchant, String.valueOf(ts)});
+        boolean hit = c.moveToFirst();
+        c.close();
+        return hit;
+    }
+
+    /**
+     * One-time cleanup of duplicates already stored: keep the earliest row
+     * of each near-duplicate group, delete the rest.
+     */
+    public void removeNearDuplicates() {
+        getWritableDatabase().execSQL(
+            "DELETE FROM txns WHERE _key IN ("
+                + "SELECT t2._key FROM txns t2 JOIN txns t1"
+                + " ON t1._key<>t2._key"
+                + " AND t1.bankCode=t2.bankCode"
+                + " AND ABS(t1.amount-t2.amount)<0.005"
+                + " AND t1.type=t2.type"
+                + " AND COALESCE(t1.merchant,'')=COALESCE(t2.merchant,'')"
+                + " AND ABS(t1.ts-t2.ts)<=60000"
+                + " AND (t1.ts<t2.ts OR (t1.ts=t2.ts AND t1._key<t2._key)))");
+    }
+
     public void insertTxn(Transaction t) {
         ContentValues v = new ContentValues();
         v.put("_key", t.key);

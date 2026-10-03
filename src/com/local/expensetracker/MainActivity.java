@@ -7,6 +7,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CalendarView;
@@ -17,9 +18,13 @@ import android.widget.Toast;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Expense Tracker. Reads bank SMS on this device only.
@@ -41,12 +46,19 @@ public class MainActivity extends Activity {
     private Button btnDay, btnWeek, btnMonth, btnCal;
     private LinearLayout calCard;
     private CalendarView calView;
+    private LinearLayout pieCard;
+    private PieChartView pieChart;
+    private LinearLayout pieLegend;
     private TextView emptyTxns;
     private TextView emptyDues;
 
     private int period = 0; // 0=day, 1=week, 2=month, 3=calendar
     private long calDayMs;
     private static long lastImportMs = 0;
+
+    private static final int[] PIE_COLORS = {
+        0xFF14532D, 0xFF16A34A, 0xFF0EA5E9, 0xFFF59E0B, 0xFF8B5CF6, 0xFF64748B
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,6 +81,11 @@ public class MainActivity extends Activity {
         btnCal = findViewById(R.id.btnCal);
         calCard = findViewById(R.id.calCard);
         calView = findViewById(R.id.calView);
+        pieCard = findViewById(R.id.pieCard);
+        pieChart = findViewById(R.id.pieChart);
+        pieLegend = findViewById(R.id.pieLegend);
+
+        db.removeNearDuplicates();
 
         calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
         calView.setMaxDate(System.currentTimeMillis());
@@ -280,8 +297,101 @@ public class MainActivity extends Activity {
         new TxnAdapter(this, rows).populate(txnContainer);
         emptyTxns.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
 
+        boolean showPie = (period == 1 || period == 2);
+        pieCard.setVisibility(showPie ? View.VISIBLE : View.GONE);
+        if (showPie) updatePie(txns);
+
         List<CardDue> dues = db.getDues();
         new DueAdapter(this, dues).populate(dueContainer);
         emptyDues.setVisibility(dues.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    /** Builds the merchant-breakdown donut for weekly/monthly tabs. */
+    private void updatePie(List<Transaction> txns) {
+        Map<String, Double> byMerchant = new LinkedHashMap<String, Double>();
+        for (Transaction t : txns) {
+            if (!("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type))) continue;
+            String m = (t.merchant == null || t.merchant.isEmpty()) ? "Others" : t.merchant;
+            Double v = byMerchant.get(m);
+            byMerchant.put(m, (v == null ? 0 : v) + t.amount);
+        }
+        List<Map.Entry<String, Double>> entries =
+            new ArrayList<Map.Entry<String, Double>>(byMerchant.entrySet());
+        Collections.sort(entries, new Comparator<Map.Entry<String, Double>>() {
+            @Override public int compare(Map.Entry<String, Double> a,
+                                         Map.Entry<String, Double> b) {
+                return Double.compare(b.getValue(), a.getValue());
+            }
+        });
+
+        double total = 0;
+        for (Map.Entry<String, Double> e : entries) total += e.getValue();
+
+        List<PieChartView.Slice> slices = new ArrayList<PieChartView.Slice>();
+        double others = 0;
+        int n = Math.min(5, entries.size());
+        for (int i = 0; i < entries.size(); i++) {
+            if (i < n) {
+                slices.add(new PieChartView.Slice(entries.get(i).getKey(),
+                    entries.get(i).getValue(), PIE_COLORS[i % PIE_COLORS.length]));
+            } else {
+                others += entries.get(i).getValue();
+            }
+        }
+        if (others > 0) {
+            slices.add(new PieChartView.Slice("Others", others,
+                PIE_COLORS[PIE_COLORS.length - 1]));
+        }
+        pieChart.setData(slices, total, PieChartView.money(total));
+
+        pieLegend.removeAllViews();
+        if (slices.isEmpty()) {
+            TextView t = new TextView(this);
+            t.setText("No spending in this period.");
+            t.setTextSize(13);
+            t.setTextColor(getColor(R.color.muted));
+            pieLegend.addView(t);
+            return;
+        }
+        for (PieChartView.Slice s : slices) addLegendRow(s, total);
+    }
+
+    private void addLegendRow(PieChartView.Slice s, double total) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        int vpad = dp(3);
+        row.setPadding(0, vpad, 0, vpad);
+
+        TextView dot = new TextView(this);
+        dot.setText("\u25CF");
+        dot.setTextColor(s.color);
+        dot.setTextSize(13);
+
+        TextView name = new TextView(this);
+        String label = s.label.length() > 16 ? s.label.substring(0, 15) + "\u2026" : s.label;
+        name.setText(label);
+        name.setTextSize(13);
+        name.setTextColor(getColor(R.color.ink));
+        LinearLayout.LayoutParams lp =
+            new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        int hpad = dp(8);
+        lp.setMargins(hpad, 0, hpad, 0);
+        name.setLayoutParams(lp);
+
+        TextView amt = new TextView(this);
+        int pct = total > 0 ? (int) Math.round(s.value / total * 100) : 0;
+        amt.setText(PieChartView.money(s.value) + " \u00B7 " + pct + "%");
+        amt.setTextSize(12);
+        amt.setTextColor(getColor(R.color.muted));
+
+        row.addView(dot);
+        row.addView(name);
+        row.addView(amt);
+        pieLegend.addView(row);
+    }
+
+    private int dp(int v) {
+        return (int) (v * getResources().getDisplayMetrics().density);
     }
 }

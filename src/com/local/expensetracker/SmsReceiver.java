@@ -19,33 +19,37 @@ public class SmsReceiver extends BroadcastReceiver {
         if (pdus == null || pdus.length == 0) return;
         String format = b.getString("format");
 
-        final String[] addr = new String[pdus.length];
-        final String[] body = new String[pdus.length];
-        final long[] ts = new long[pdus.length];
-        for (int i = 0; i < pdus.length; i++) {
+        // Reassemble multipart SMS into one message before importing,
+        // so a long SMS is never stored as several partial rows.
+        String addr = null;
+        StringBuilder body = new StringBuilder();
+        long ts = 0;
+        for (Object pdu : pdus) {
             SmsMessage m;
             if (Build.VERSION.SDK_INT >= 23) {
-                m = SmsMessage.createFromPdu((byte[]) pdus[i], format);
+                m = SmsMessage.createFromPdu((byte[]) pdu, format);
             } else {
-                m = SmsMessage.createFromPdu((byte[]) pdus[i]);
+                m = SmsMessage.createFromPdu((byte[]) pdu);
             }
             if (m == null) continue;
-            addr[i] = m.getDisplayOriginatingAddress();
-            body[i] = m.getDisplayMessageBody();
-            ts[i] = m.getTimestampMillis();
+            if (addr == null) {
+                addr = m.getDisplayOriginatingAddress();
+                ts = m.getTimestampMillis();
+            }
+            body.append(m.getDisplayMessageBody());
         }
+        if (addr == null) return;
 
+        final String fAddr = addr;
+        final String fBody = body.toString();
+        final long fTs = ts;
         final Context appCtx = context.getApplicationContext();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 DbHelper db = new DbHelper(appCtx);
                 try {
-                    for (int i = 0; i < addr.length; i++) {
-                        if (addr[i] != null && body[i] != null) {
-                            Importer.importOne(db, addr[i], body[i], ts[i]);
-                        }
-                    }
+                    Importer.importOne(db, fAddr, fBody, fTs);
                     db.refreshOverdue(System.currentTimeMillis());
                 } finally {
                     db.close();

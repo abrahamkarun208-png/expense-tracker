@@ -32,9 +32,10 @@ public class Importer {
             t.bankName = r.bankName;
             t.amount = r.amount;
             t.type = r.type;
-            t.merchant = r.merchant;
+            t.merchant = r.merchant == null ? "" : r.merchant;
             t.ts = smsTs;
             t.card4 = r.card4;
+            if (db.hasNearDuplicate(t.bankCode, t.amount, t.type, t.merchant, t.ts)) return;
             db.insertTxn(t);
         }
     }
