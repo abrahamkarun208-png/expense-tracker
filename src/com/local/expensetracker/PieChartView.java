@@ -7,6 +7,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
@@ -30,6 +31,15 @@ public class PieChartView extends View {
     private List<Slice> slices = new ArrayList<Slice>();
     private double total = 0;
     private String centerText = "";
+    private OnSliceClickListener listener;
+
+    public interface OnSliceClickListener {
+        void onSliceClick(int index);
+    }
+
+    public void setOnSliceClickListener(OnSliceClickListener l) {
+        this.listener = l;
+    }
 
     public PieChartView(Context context) {
         super(context);
@@ -94,5 +104,35 @@ public class PieChartView extends View {
 
     public static String money(double x) {
         return "\u20B9" + String.format(Locale.US, "%,.0f", x);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() != MotionEvent.ACTION_UP
+                || listener == null || slices.isEmpty() || total <= 0) {
+            return super.onTouchEvent(event);
+        }
+        float density = getResources().getDisplayMetrics().density;
+        float cx = getWidth() / 2f;
+        float cy = getHeight() / 2f;
+        float r = Math.min(cx, cy) - 4 * density;
+        float dx = event.getX() - cx;
+        float dy = event.getY() - cy;
+        float dist = (float) Math.sqrt(dx * dx + dy * dy);
+        if (dist < r * 0.58f || dist > r) return false; // hole or outside
+        // Canvas angles: 0 deg = 3 o'clock, clockwise positive (y points down).
+        double ang = Math.toDegrees(Math.atan2(dy, dx));
+        float norm = (float) ((ang + 90 + 360) % 360); // slices start at -90 (top)
+        float acc = 0;
+        for (int i = 0; i < slices.size(); i++) {
+            float sweep = (float) (slices.get(i).value / total * 360);
+            if (sweep <= 0) continue;
+            if (norm >= acc && norm < acc + sweep) {
+                listener.onSliceClick(i);
+                return true;
+            }
+            acc += sweep;
+        }
+        return false;
     }
 }

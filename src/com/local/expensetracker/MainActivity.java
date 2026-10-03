@@ -2,16 +2,20 @@ package com.local.expensetracker;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CalendarView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -49,6 +53,9 @@ public class MainActivity extends Activity {
     private LinearLayout pieCard;
     private PieChartView pieChart;
     private LinearLayout pieLegend;
+    private List<PieChartView.Slice> pieSlices = new ArrayList<PieChartView.Slice>();
+    private List<List<Transaction>> pieMembers =
+        new ArrayList<List<Transaction>>();
     private TextView emptyTxns;
     private TextView emptyDues;
 
@@ -84,6 +91,14 @@ public class MainActivity extends Activity {
         pieCard = findViewById(R.id.pieCard);
         pieChart = findViewById(R.id.pieChart);
         pieLegend = findViewById(R.id.pieLegend);
+        pieChart.setOnSliceClickListener(new PieChartView.OnSliceClickListener() {
+            @Override public void onSliceClick(int index) {
+                if (index >= 0 && index < pieSlices.size()
+                        && index < pieMembers.size()) {
+                    showMerchantDetail(pieSlices.get(index), pieMembers.get(index));
+                }
+            }
+        });
 
         db.removeNearDuplicates();
 
@@ -308,44 +323,54 @@ public class MainActivity extends Activity {
 
     /** Builds the merchant-breakdown donut for weekly/monthly tabs. */
     private void updatePie(List<Transaction> txns) {
-        Map<String, Double> byMerchant = new LinkedHashMap<String, Double>();
+        Map<String, List<Transaction>> byMerchant = new LinkedHashMap<String, List<Transaction>>();
         for (Transaction t : txns) {
             if (!("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type))) continue;
-            String m = (t.merchant == null || t.merchant.isEmpty()) ? "Others" : t.merchant;
-            Double v = byMerchant.get(m);
-            byMerchant.put(m, (v == null ? 0 : v) + t.amount);
-        }
-        List<Map.Entry<String, Double>> entries =
-            new ArrayList<Map.Entry<String, Double>>(byMerchant.entrySet());
-        Collections.sort(entries, new Comparator<Map.Entry<String, Double>>() {
-            @Override public int compare(Map.Entry<String, Double> a,
-                                         Map.Entry<String, Double> b) {
-                return Double.compare(b.getValue(), a.getValue());
+            String m = (t.merchant == null || t.merchant.isEmpty()) ? "Unknown" : t.merchant;
+            List<Transaction> l = byMerchant.get(m);
+            if (l == null) {
+                l = new ArrayList<Transaction>();
+                byMerchant.put(m, l);
             }
-        });
+            l.add(t);
+        }
+        List<Map.Entry<String, List<Transaction>>> entries =
+            new ArrayList<Map.Entry<String, List<Transaction>>>(byMerchant.entrySet());
+        Collections.sort(entries,
+            new Comparator<Map.Entry<String, List<Transaction>>>() {
+                @Override public int compare(Map.Entry<String, List<Transaction>> a,
+                                             Map.Entry<String, List<Transaction>> b) {
+                    return Double.compare(sumOf(b.getValue()), sumOf(a.getValue()));
+                }
+            });
 
         double total = 0;
-        for (Map.Entry<String, Double> e : entries) total += e.getValue();
+        for (Map.Entry<String, List<Transaction>> e : entries) total += sumOf(e.getValue());
 
-        List<PieChartView.Slice> slices = new ArrayList<PieChartView.Slice>();
-        double others = 0;
+        pieSlices.clear();
+        pieMembers.clear();
         int n = Math.min(5, entries.size());
+        List<Transaction> othersMembers = new ArrayList<Transaction>();
+        double others = 0;
         for (int i = 0; i < entries.size(); i++) {
             if (i < n) {
-                slices.add(new PieChartView.Slice(entries.get(i).getKey(),
-                    entries.get(i).getValue(), PIE_COLORS[i % PIE_COLORS.length]));
+                pieSlices.add(new PieChartView.Slice(entries.get(i).getKey(),
+                    sumOf(entries.get(i).getValue()), PIE_COLORS[i % PIE_COLORS.length]));
+                pieMembers.add(entries.get(i).getValue());
             } else {
-                others += entries.get(i).getValue();
+                others += sumOf(entries.get(i).getValue());
+                othersMembers.addAll(entries.get(i).getValue());
             }
         }
         if (others > 0) {
-            slices.add(new PieChartView.Slice("Others", others,
+            pieSlices.add(new PieChartView.Slice("Others", others,
                 PIE_COLORS[PIE_COLORS.length - 1]));
+            pieMembers.add(othersMembers);
         }
-        pieChart.setData(slices, total, PieChartView.money(total));
+        pieChart.setData(pieSlices, total, PieChartView.money(total));
 
         pieLegend.removeAllViews();
-        if (slices.isEmpty()) {
+        if (pieSlices.isEmpty()) {
             TextView t = new TextView(this);
             t.setText("No spending in this period.");
             t.setTextSize(13);
@@ -353,15 +378,28 @@ public class MainActivity extends Activity {
             pieLegend.addView(t);
             return;
         }
-        for (PieChartView.Slice s : slices) addLegendRow(s, total);
+        for (int i = 0; i < pieSlices.size(); i++) addLegendRow(i, total);
     }
 
-    private void addLegendRow(PieChartView.Slice s, double total) {
+    private static double sumOf(List<Transaction> txns) {
+        double s = 0;
+        for (Transaction t : txns) s += t.amount;
+        return s;
+    }
+
+    private void addLegendRow(final int index, double total) {
+        PieChartView.Slice s = pieSlices.get(index);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        int vpad = dp(3);
+        int vpad = dp(5);
         row.setPadding(0, vpad, 0, vpad);
+        row.setClickable(true);
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                showMerchantDetail(pieSlices.get(index), pieMembers.get(index));
+            }
+        });
 
         TextView dot = new TextView(this);
         dot.setText("\u25CF");
@@ -389,6 +427,48 @@ public class MainActivity extends Activity {
         row.addView(name);
         row.addView(amt);
         pieLegend.addView(row);
+    }
+
+    /** Drill-down: this merchant's transactions, grouped by day. */
+    private void showMerchantDetail(PieChartView.Slice s, List<Transaction> members) {
+        double total = sumOf(members);
+        String periodName = period == 1 ? "last 7 days" : "last 30 days";
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText(s.label);
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(getColor(R.color.ink));
+
+        TextView sub = new TextView(this);
+        String cnt = members.size() == 1 ? "1 transaction" : members.size() + " transactions";
+        sub.setText(PieChartView.money(total) + " \u00B7 " + cnt + " \u00B7 " + periodName);
+        sub.setTextSize(13);
+        sub.setTextColor(getColor(R.color.muted));
+        sub.setPadding(0, dp(4), 0, dp(12));
+
+        ScrollView sv = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        new TxnAdapter(this, TxnGrouper.groupByDay(members)).populate(list);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(340)));
+
+        root.addView(title);
+        root.addView(sub);
+        root.addView(sv);
+
+        new AlertDialog.Builder(this)
+            .setView(root)
+            .setPositiveButton("Close", null)
+            .show();
     }
 
     private int dp(int v) {
