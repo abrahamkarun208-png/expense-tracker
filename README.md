@@ -22,10 +22,13 @@ spending splits — with **no servers, no accounts, and no internet access**.
 
 ## Privacy
 
-The app declares **only** `READ_SMS` and `RECEIVE_SMS`. It does **not**
-declare the `INTERNET` permission — it is technically incapable of sending
-data off the device. No analytics, no backup, no tracking. See
-[PRIVACY.md](PRIVACY.md).
+The app declares `READ_SMS` and `RECEIVE_SMS` for its core job (reading
+bank SMS on-device). Since v1.10 it also declares `INTERNET` +
+`REQUEST_INSTALL_PACKAGES`, used **only** by the built-in self-updater:
+at most once every 48 hours the app asks GitHub's releases API whether a
+newer version exists, and downloads the APK from github.com only when
+you approve the update. No expense data or SMS content ever leaves the
+device. See [PRIVACY.md](PRIVACY.md).
 
 ## Requirements (to build)
 

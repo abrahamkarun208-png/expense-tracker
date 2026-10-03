@@ -300,7 +300,17 @@
             android:textSize="11sp"
             android:textColor="@color/muted"
             android:gravity="center"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="4dp" />
+
+        <TextView
+            android:id="@+id/checkUpdates"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Check for updates"
+            android:textSize="11sp"
+            android:textColor="@color/primary"
+            android:padding="8dp"
             android:layout_marginBottom="4dp" />
     </LinearLayout>
 </ScrollView>

@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.local.expensetracker"
-    android:versionCode="10"
-    android:versionName="1.9">
+    android:versionCode="11"
+    android:versionName="1.10">
 
-    <!-- SMS access only. No INTERNET permission: this app cannot send data anywhere. -->
+    <!-- SMS: core function (read bank SMS on-device). -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- INTERNET: used ONLY by the self-updater (GitHub releases API + APK
+         download, at most once every 48h and only when you open the app).
+         No expense data or SMS content is ever sent anywhere. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
 
@@ -34,5 +39,12 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <!-- Serves a downloaded update APK to the system installer (not exported). -->
+        <provider
+            android:name=".ApkProvider"
+            android:authorities="com.local.expensetracker.apkprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

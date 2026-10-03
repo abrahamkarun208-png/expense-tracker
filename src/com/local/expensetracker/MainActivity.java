@@ -5,6 +5,7 @@ package com.local.expensetracker;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Typeface;
@@ -51,6 +52,7 @@ public class MainActivity extends Activity {
     private Button btnDay, btnWeek, btnMonth, btnCal;
     private LinearLayout calCard;
     private SpendCalendarView spendCal;
+    private UpdateChecker updateChecker;
     private LinearLayout pieCard;
     private PieChartView pieChart;
     private LinearLayout pieLegend;
@@ -113,6 +115,15 @@ public class MainActivity extends Activity {
 
         calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
         spendCal.showCurrentMonth();
+
+        updateChecker = new UpdateChecker(this);
+        TextView checkUpdates = findViewById(R.id.checkUpdates);
+        checkUpdates.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                updateChecker.checkNow(true);
+            }
+        });
+        updateChecker.checkIfDue();
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -204,6 +215,12 @@ public class MainActivity extends Activity {
             showPermUi();
             Toast.makeText(this, R.string.perm_needed, Toast.LENGTH_LONG).show();
         }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (updateChecker != null) updateChecker.onActivityResult(requestCode);
     }
 
     private void showPermUi() {
