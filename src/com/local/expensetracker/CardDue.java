@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 Chris. All rights reserved. */
+
 package com.local.expensetracker;
 
 public class CardDue {

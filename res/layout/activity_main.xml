@@ -256,5 +256,15 @@
             android:text="@string/rescan"
             android:background="@drawable/btn_primary"
             android:textColor="#FFFFFF" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="© 2026 Chris"
+            android:textSize="11sp"
+            android:textColor="@color/muted"
+            android:gravity="center"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="4dp" />
     </LinearLayout>
 </ScrollView>

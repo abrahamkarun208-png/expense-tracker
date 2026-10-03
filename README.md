@@ -77,6 +77,10 @@ res/                     Layouts, drawables, strings, themes
 build.sh                 One-command build script
 ```
 
+## License
+
+Copyright (c) 2026 Chris. All rights reserved. See [LICENSE](LICENSE).
+
 ## Notes
 
 - Signed with a debug key (fine for sideloading; generate a release

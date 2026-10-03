@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 Chris. All rights reserved. */
+
 package com.local.expensetracker;
 
 /** Shared import logic: parse one SMS and store the result. Used by the
