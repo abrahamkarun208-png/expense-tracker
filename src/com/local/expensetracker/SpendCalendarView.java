@@ -27,6 +27,9 @@ public class SpendCalendarView extends LinearLayout {
         void onDaySelect(long dayStartMs);
     }
 
+    /** Days with spending above this get a red dot, at/below get a green dot. */
+    private static final double SPEND_ALERT = 1500;
+
     private int year, month; // month is 0-based
     private long selectedDay;
     private Map<Long, Double> spendByDay = new HashMap<Long, Double>();
@@ -191,8 +194,9 @@ public class SpendCalendarView extends LinearLayout {
                     boolean future = dayStart > todayStart;
                     boolean selected = dayStart == selectedDay;
                     Double sv = spendByDay.get(dayStart);
-                    boolean hasSpend = !future && sv != null && sv > 0;
-                    cell = dayCell(ctx, day, selected, hasSpend, future, dayStart);
+                    double spent = sv == null ? 0 : sv;
+                    boolean hasSpend = !future && spent > 0;
+                    cell = dayCell(ctx, day, selected, hasSpend, spent, future, dayStart);
                     day++;
                 }
                 row.addView(cell);
@@ -210,7 +214,7 @@ public class SpendCalendarView extends LinearLayout {
     }
 
     private LinearLayout dayCell(Context ctx, int day, boolean selected,
-                                 boolean hasSpend, boolean future,
+                                 boolean hasSpend, double spent, boolean future,
                                  final long dayStart) {
         LinearLayout cell = new LinearLayout(ctx);
         cell.setOrientation(VERTICAL);
@@ -240,7 +244,8 @@ public class SpendCalendarView extends LinearLayout {
         dlp.topMargin = dp(3);
         dlp.gravity = Gravity.CENTER_HORIZONTAL;
         dot.setLayoutParams(dlp);
-        dot.setBackgroundResource(R.drawable.spend_dot);
+        dot.setBackgroundResource(
+            spent > SPEND_ALERT ? R.drawable.dot_over : R.drawable.dot_under);
         dot.setVisibility(hasSpend ? VISIBLE : INVISIBLE);
 
         cell.addView(num);
