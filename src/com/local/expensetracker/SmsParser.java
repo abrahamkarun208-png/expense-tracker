@@ -33,18 +33,18 @@ public class SmsParser {
 
     // {code, full name, sender-id fragments...}
     private static final String[][] BANKS = {
-        {"HDFC", "HDFC Bank", "HDFCBK", "HDFCBNK", "HDFCBAN", "PAYZAP"},
-        {"SBI", "State Bank of India", "SBIBNK", "SBIINB", "SBIPSG", "SBIYONO", "SBISMS"},
-        {"ICICI", "ICICI Bank", "ICICIB", "ICICIBK", "ICICIT"},
-        {"AXIS", "Axis Bank", "AXISBK", "AXISBNK"},
-        {"KOTAK", "Kotak Mahindra", "KOTAKB", "KOTAK"},
-        {"PNB", "Punjab National Bank", "PNBSMS", "PNBBNK"},
-        {"BOB", "Bank of Baroda", "BOBTXN", "BAROD", "BOBBNK", "BARBSM"},
-        {"CANARA", "Canara Bank", "CANBNK", "CNRBNK"},
+        {"HDFC", "HDFC Bank", "HDFCBK", "HDFCBNK", "HDFCBAN", "PAYZAP", "HDFCCC", "HDFCDC"},
+        {"SBI", "State Bank of India", "SBIBNK", "SBIINB", "SBIPSG", "SBIYONO", "SBISMS", "SBIUPI", "SBICRD", "ATMSBI", "CBSSBI"},
+        {"ICICI", "ICICI Bank", "ICICIB", "ICICIBK", "ICICIT", "ICBANK"},
+        {"AXIS", "Axis Bank", "AXISBK", "AXISBNK", "AXIS", "AXSFIN"},
+        {"KOTAK", "Kotak Mahindra", "KOTAKB", "KOTAK", "KTKREM"},
+        {"PNB", "Punjab National Bank", "PNBSMS", "PNBBNK", "PNBINB"},
+        {"BOB", "Bank of Baroda", "BOBTXN", "BAROD", "BOBBNK", "BARBSM", "BOBSMS", "BOBIBK"},
+        {"CANARA", "Canara Bank", "CANBNK", "CNRBNK", "CAANBK"},
         {"YES", "Yes Bank", "YESBNK", "YESBK", "YESBANK"},
-        {"IDFC", "IDFC First Bank", "IDFCBK", "IDFCFB"},
+        {"IDFC", "IDFC First Bank", "IDFCBK", "IDFCFB", "IDFC"},
         {"IDBI", "IDBI Bank", "IDBIBK", "IDBIBANK"},
-        {"UNION", "Union Bank", "UNIONB", "UBISMS"},
+        {"UNION", "Union Bank", "UNIONB", "UBISMS", "UNION"},
         {"INDUSIND", "IndusInd Bank", "INDUSB", "INDUS", "INDBNK"},
         {"FEDERAL", "Federal Bank", "FEDBNK", "FEDBK", "FEDSMS"},
         {"IOB", "Indian Overseas Bank", "IOBCHN", "IOBBNK", "IOB"},
@@ -62,6 +62,21 @@ public class SmsParser {
         {"EQUITAS", "Equitas Small Finance", "EQUTAS", "EQUITA"},
         {"ESAF", "ESAF Small Finance Bank", "ESAFSF", "ESAF"},
         {"IPPB", "India Post Payments Bank", "IPBMSG", "IPPB"},
+        {"DHANLAXMI", "Dhanlaxmi Bank", "DHANBK", "DHANLAXMI"},
+        {"HSBC", "HSBC India", "HSBC", "HSBCIN"},
+        {"NSDLPB", "NSDL Payments Bank", "NSDLPB"},
+        {"SLICE", "Slice Small Finance Bank", "SLCBNK", "SLICE"},
+        {"JKBANK", "Jammu & Kashmir Bank", "JKBANK"},
+        {"JIOPB", "Jio Payments Bank", "JIOPBS"},
+        {"MAHABK", "Bank of Maharashtra", "MAHABK"},
+        {"PSB", "Punjab & Sind Bank", "PSBANK", "PSBALRT"},
+        {"DCB", "DCB Bank", "DCBANK"},
+        {"SBM", "SBM Bank", "SBMBANK"},
+        {"UJJIVAN", "Ujjivan Small Finance Bank", "UJJIVAN"},
+        {"TMB", "Tamilnad Mercantile Bank", "TMBANK"},
+        {"KVB", "Karur Vysya Bank", "KVBANK", "KVBUPI"},
+        {"CSB", "CSB Bank", "CSFBNK"},
+        {"AIRTELPB", "Airtel Payments Bank", "AIRBNK"},
     };
 
     private static final Pattern AMOUNT =
@@ -193,11 +208,13 @@ public class SmsParser {
     }
 
     private static String classify(String low, String body, String addr) {
-        boolean cardCtx = low.contains("credit card") || !extractCard4(body).isEmpty();
+        boolean cardCtx = low.contains("credit card") || low.contains("debit card")
+            || !extractCard4(body).isEmpty();
         boolean upiCtx = low.contains("upi");
         boolean strongDebit = low.contains("debit") || low.contains("spent") || low.contains("purchase")
             || low.contains("paid") || low.contains("withdrawn") || low.contains("charged")
-            || low.contains("txn of") || low.contains("redeemed");
+            || low.contains("txn of") || low.contains("redeemed")
+            || low.contains("payment successful");
         boolean strongCredit = low.contains("credit") || low.contains("received")
             || low.contains("deposited") || low.contains("deposit") || low.contains("refund");
         // Note: "cashback" alone is NOT a credit signal ("Get 10% cashback on
@@ -301,10 +318,12 @@ public class SmsParser {
                     || l.equals("transfer") || l.equals("upi")) {
                 continue;
             }
-            // Skip "credited to your A/c ...", "from HDFC Bank ..." etc.
+            // Skip "credited to your A/c ...", "from HDFC Bank ...",
+            // "paid from account XXXXXX4567" etc.
             if (l.startsWith("your ") || l.startsWith("my ") || l.startsWith("our ")
                     || l.startsWith("the ") || l.contains(" bank") || l.contains("a/c")
-                    || l.contains("acct")) {
+                    || l.contains("acct")
+                    || Pattern.compile("(?i)\\baccount\\s+[x*\\d]*\\d{3,}").matcher(s).find()) {
                 continue;
             }
             return s;
@@ -328,7 +347,7 @@ public class SmsParser {
         int best = s.length();
         for (String cut : new String[]{" on ", " via ", " is ", " was ", " has ",
                                        " ref ", " ref:", ".ref", " txn ", " not ", " rrn",
-                                       ".rrn", " upi:", " upi ", " using ",
+                                       ".rrn", " upi:", " upi ", " using ", " for ",
                                        " bal", " avl", " -", ";", ","}) {
             int i = l.indexOf(cut);
             if (i > 1 && i < best) best = i;
