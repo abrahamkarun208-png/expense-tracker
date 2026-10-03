@@ -33,33 +33,52 @@ public class SmsParser {
 
     // {code, full name, sender-id fragments...}
     private static final String[][] BANKS = {
-        {"HDFC", "HDFC Bank", "HDFCBK", "HDFCBNK"},
+        {"HDFC", "HDFC Bank", "HDFCBK", "HDFCBNK", "HDFCBAN"},
         {"SBI", "State Bank of India", "SBIBNK", "SBIINB", "SBIPSG", "SBIYONO", "SBISMS"},
-        {"ICICI", "ICICI Bank", "ICICIB", "ICICIBK"},
+        {"ICICI", "ICICI Bank", "ICICIB", "ICICIBK", "ICICIT"},
         {"AXIS", "Axis Bank", "AXISBK", "AXISBNK"},
         {"KOTAK", "Kotak Mahindra", "KOTAKB", "KOTAK"},
         {"PNB", "Punjab National Bank", "PNBSMS", "PNBBNK"},
-        {"BOB", "Bank of Baroda", "BOBTXN", "BAROD", "BOBBNK"},
-        {"CANARA", "Canara Bank", "CANBNK"},
-        {"YES", "Yes Bank", "YESBNK"},
-        {"IDFC", "IDFC First Bank", "IDFCBK"},
-        {"IDBI", "IDBI Bank", "IDBIBK"},
-        {"UNION", "Union Bank", "UNIONB"},
-        {"INDUSIND", "IndusInd Bank", "INDUSB", "INDUS"},
-        {"FEDERAL", "Federal Bank", "FEDBNK"},
-        {"IOB", "Indian Overseas Bank", "IOBCHN", "IOBBNK"},
-        {"CUB", "City Union Bank", "CUBMBL"},
-        {"RBL", "RBL Bank", "RBLBNK", "RBLCRD"},
+        {"BOB", "Bank of Baroda", "BOBTXN", "BAROD", "BOBBNK", "BARBSM"},
+        {"CANARA", "Canara Bank", "CANBNK", "CNRBNK"},
+        {"YES", "Yes Bank", "YESBNK", "YESBK", "YESBANK"},
+        {"IDFC", "IDFC First Bank", "IDFCBK", "IDFCFB"},
+        {"IDBI", "IDBI Bank", "IDBIBK", "IDBIBANK"},
+        {"UNION", "Union Bank", "UNIONB", "UBISMS"},
+        {"INDUSIND", "IndusInd Bank", "INDUSB", "INDUS", "INDBNK"},
+        {"FEDERAL", "Federal Bank", "FEDBNK", "FEDBK", "FEDSMS"},
+        {"IOB", "Indian Overseas Bank", "IOBCHN", "IOBBNK", "IOB"},
+        {"CUB", "City Union Bank", "CUBMBL", "CUBSMS", "CUBBNK", "CUBANK", "CUBLTD"},
+        {"RBL", "RBL Bank", "RBLBNK", "RBLCRD", "RBLBANK"},
         {"AUBANK", "AU Small Finance", "AUBANK"},
         {"SC", "Standard Chartered", "SCBANK", "STANCHART"},
+        {"BOI", "Bank of India", "BOIIND", "BOIBNK", "BOISML"},
+        {"CBI", "Central Bank of India", "CENTBK", "CBOI"},
+        {"INDIAN", "Indian Bank", "INDBKS"},
+        {"UCO", "UCO Bank", "UCOBNK", "UCOBANK"},
+        {"SIB", "South Indian Bank", "SIBSMS", "SIBBANK"},
+        {"KBL", "Karnataka Bank", "KBLBNK", "KTKBANK", "KARBANK", "KARNATABANK"},
+        {"BANDHAN", "Bandhan Bank", "BDNSMS", "BANDHN", "BANDHAN"},
+        {"EQUITAS", "Equitas Small Finance", "EQUTAS", "EQUITA"},
     };
 
     private static final Pattern AMOUNT =
-        Pattern.compile("(?i)(?:rs\\.?|inr|\\u20B9)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)");
+        Pattern.compile("(?i)(?:rs\\.?|inr|usd|\\u20B9)\\s*:?\\s*([0-9,]+(?:\\.[0-9]{1,2})?|\\.[0-9]{1,2})");
     private static final Pattern CARD4 =
-        Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?)\\s*(\\d{4})");
+        Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?|card\\w*\\s+x)\\s*(\\d{4})");
     private static final Pattern MERCHANT_KW =
         Pattern.compile("(?i)\\b(at|to|towards|from)\\b");
+    // "Dr."/"Cr." abbreviations (BOB, Canara, AU use these instead of debited/credited).
+    private static final Pattern DR_ABBR = Pattern.compile("(?i)\\bdr\\b");
+    private static final Pattern CR_ABBR = Pattern.compile("(?i)\\bcr\\b");
+    // Direction anchored on the user's own account, for messages that name
+    // both sides ("Your a/c ... is debited ... and credited to a/c ...").
+    // The verb usually follows within ~50 chars ("a/c no." itself has a dot,
+    // so a no-dot window would break).
+    private static final Pattern OWN_CREDITED =
+        Pattern.compile("(?i)your\\s+a/?c.{0,50}?credited");
+    private static final Pattern OWN_DEBITED =
+        Pattern.compile("(?i)your\\s+a/?c.{0,50}?debited");
 
     public static Result parse(String address, String body, long smsTs) {
         if (body == null || body.length() < 10) return null;
@@ -95,7 +114,7 @@ public class SmsParser {
 
         // 2) Card payment receipt: "payment of Rs X received/credited", "thank you for your payment"
         if ((low.contains("payment") && (low.contains("received") || low.contains("credited")
-                    || low.contains("thank")))
+                    || low.contains("thank") || low.contains("made to")))
                 || low.contains("payment received")) {
             if (firstAmt > 0) {
                 r.isPayment = true;
@@ -105,6 +124,12 @@ public class SmsParser {
                 return r;
             }
         }
+
+        // 2b) Known non-transaction alerts that wear transaction shapes:
+        // bill-due reminders, mandate creations, lien/ASBA blocks, failed or
+        // declined transactions, and beneficiary confirmations of an outgoing
+        // transfer (the debit SMS already covered those).
+        if (isNonTxnAlert(low)) return null;
 
         // 3) Transaction
         if (firstAmt <= 0) return null;
@@ -155,8 +180,11 @@ public class SmsParser {
     }
 
     private static String extractCard4(String body) {
-        // Never treat a bank *account* number ("A/c xx1234") as a card number.
-        String b = body.replaceAll("(?i)\\ba\\s*/?\\s*c\\.?\\s*(?:xx|x{2,})\\s*\\d{4}", " ");
+        // Never treat a bank *account* number ("A/c xx1234", "A/C *XX0000",
+        // "Acct XX1234", "A/c no. XX1234") as a card number.
+        String b = body.replaceAll(
+            "(?i)\\b(?:a\\s*/?\\s*c|acct|account)\\.?\\s*(?:no\\.?\\s*)?\\*?\\s*(?:xx|x{2,})\\s*\\d{4}",
+            " ");
         Matcher m = CARD4.matcher(b);
         if (m.find()) return m.group(1);
         return "";
@@ -165,21 +193,46 @@ public class SmsParser {
     private static String classify(String low, String body, String addr) {
         boolean cardCtx = low.contains("credit card") || !extractCard4(body).isEmpty();
         boolean upiCtx = low.contains("upi");
-        boolean debitW = low.contains("debited") || low.contains("spent") || low.contains("purchase")
+        boolean strongDebit = low.contains("debit") || low.contains("spent") || low.contains("purchase")
             || low.contains("paid") || low.contains("withdrawn") || low.contains("charged")
-            || low.contains("txn of");
-        boolean creditW = low.contains("credited") || low.contains("received")
-            || low.contains("deposited") || low.contains("refund") || low.contains("cashback");
+            || low.contains("txn of") || low.contains("redeemed");
+        boolean strongCredit = low.contains("credit") || low.contains("received")
+            || low.contains("deposited") || low.contains("deposit") || low.contains("refund");
+        // Note: "cashback" alone is NOT a credit signal ("Get 10% cashback on
+        // Rs 5000 spends" is a promo). Real cashback credits always pair it
+        // with credited/received/deposited.
+        boolean drAbbr = DR_ABBR.matcher(low).find();
+        boolean crAbbr = CR_ABBR.matcher(low).find();
+        boolean debitW = strongDebit || drAbbr;
+        boolean creditW = strongCredit || crAbbr;
         boolean transferW = low.contains("own account") || low.contains("self")
             || low.contains("fund transfer") || low.contains("transferred to");
 
+        // Direction anchored on the user's own account beats generic verb order
+        // ("Your a/c ... is debited ... and credited to a/c ..." vs the reverse).
+        String ownDir = ownAccountDirection(body);
+        if (ownDir != null) {
+            if (cardCtx && "DEBIT".equals(ownDir)
+                    && (low.contains("spent") || low.contains("purchase"))) {
+                return "CARD_SPEND";
+            }
+            return ownDir;
+        }
+
         if (cardCtx && debitW) return "CARD_SPEND";
         if (transferW && (debitW || low.contains("transfer"))) return "TRANSFER";
-        // HDFC UPI debit: "Sent Rs.1860.00 From HDFC Bank A/C *9066 To ..."
-        // (anchored at the start so "sent by ..." in credit SMS can't misfire)
-        if (low.trim().startsWith("sent ") && !creditW) return "DEBIT";
+        String t = low.trim();
+        // "Sent Rs...", "Money Sent: Rs...", "Txn Rs..." debit shapes.
+        if ((t.startsWith("sent ") || t.startsWith("txn ") || low.contains("money sent"))
+                && !creditW) {
+            return "DEBIT";
+        }
+        // E-mandate debits with no explicit debit verb ("...processed successfully").
+        if (low.contains("mandate") && low.contains("process") && !creditW) return "DEBIT";
         if (debitW && !creditW) return "DEBIT";
         if (creditW && !debitW) return "CREDIT";
+        // "credited to Dr. Sharma": the only debit signal is the Dr. abbreviation.
+        if (drAbbr && !strongDebit && strongCredit) return "CREDIT";
         // UPI "transaction of Rs X ... is successful" (money sent, no explicit debit verb)
         if (upiCtx && (low.contains("transaction of") || low.contains("payment of"))
                 && (low.contains("successful") || low.contains("success"))
@@ -187,6 +240,45 @@ public class SmsParser {
         if (debitW) return "DEBIT";
         if (creditW) return "CREDIT";
         return null;
+    }
+
+    /** CREDIT/DEBIT/NULL based on "Your a/c ... is credited/debited" wording. */
+    private static String ownAccountDirection(String body) {
+        Matcher mc = OWN_CREDITED.matcher(body);
+        Matcher md = OWN_DEBITED.matcher(body);
+        boolean c = mc.find();
+        boolean d = md.find();
+        if (c && d) return mc.start() < md.start() ? "CREDIT" : "DEBIT";
+        if (c) return "CREDIT";
+        if (d) return "DEBIT";
+        return null;
+    }
+
+    /** Alerts shaped like transactions where no money moved. */
+    private static boolean isNonTxnAlert(String low) {
+        if (low.contains("is due on")) return true;                 // Kotak bill reminder
+        if (low.contains("mandate") && low.contains("creat")) return true; // PNB mandate created
+        if (low.contains("lien of") || low.contains("lien marked")) return true; // IDFC ASBA block
+        if (low.contains("e-voucher") || low.contains("evoucher")) return true;
+        // Marketing promos ("Get 10% cashback...", "T&C apply") - no money moved.
+        if (low.contains("t&c") || low.contains("t and c")
+                || low.contains("terms and conditions")) {
+            return true;
+        }
+        // Beneficiary confirmation of an OUTGOING transfer ("X has received Rs N
+        // from your A/c ...") - the debit SMS already recorded it.
+        if (Pattern.compile("(?i)has received (?:rs\\.?|inr|\\u20B9)?\\s*[0-9,.]+[^.]*?from your a/?c")
+                .matcher(low).find()) {
+            return true;
+        }
+        // Failed / declined / insufficient-funds: nothing moved
+        // (unless it's a refund/reversal, which IS money back).
+        if ((low.contains("insufficient") || low.contains("failed") || low.contains("declined")
+                    || low.contains("unsuccessful"))
+                && !low.contains("refund") && !low.contains("revers")) {
+            return true;
+        }
+        return false;
     }
 
     private static String extractMerchant(String body) {
@@ -198,29 +290,60 @@ public class SmsParser {
             int end = body.length();
             Matcher k2 = MERCHANT_KW.matcher(body);
             if (k2.find(start)) end = k2.start();
-            String s = body.substring(start, Math.min(end, start + 44)).trim()
-                    .replaceAll("^[\\s:;,-]+", "");
-            if (s.isEmpty() || !Character.isLetterOrDigit(s.charAt(0))) continue;
+            String s = cleanMerchant(body.substring(start, Math.min(end, start + 64)));
+            if (s.isEmpty()) continue;
+            // Skip pure numbers / numeric VPAs ("25000@10000") and filler words.
+            if (s.matches("(?i)^[0-9@.\\s]+$")) continue;
             String l = s.toLowerCase(Locale.US);
+            if (l.equals("pay") || l.equals("payment") || l.equals("payments")
+                    || l.equals("transfer") || l.equals("upi")) {
+                continue;
+            }
             // Skip "credited to your A/c ...", "from HDFC Bank ..." etc.
             if (l.startsWith("your ") || l.startsWith("my ") || l.startsWith("our ")
                     || l.startsWith("the ") || l.contains(" bank") || l.contains("a/c")
                     || l.contains("acct")) {
                 continue;
             }
-            int best = s.length();
-            for (String cut : new String[]{" on ", " via ", " is ", " was ", " has ",
-                                           " ref ", " txn ", ","}) {
-                int i = l.indexOf(cut);
-                if (i > 1 && i < best) best = i;
-            }
-            s = s.substring(0, best).trim();
-            if (s.length() > 34) s = s.substring(0, 34).trim();
-            // Drop noise prefixes like "VPA " / "UPI/".
-            s = s.replaceFirst("(?i)^vpa\\s+", "").replaceFirst("(?i)^upi/", "");
-            if (s.length() >= 2) return s;
+            return s;
+        }
+        // Fallback: UPI narrations like UPI/P2M/<rrn>/<merchant>.
+        Matcher um = Pattern.compile("(?i)\\bupi/[^/\\s]+/\\d+/([^/\\n]{2,44})").matcher(body);
+        while (um.find()) {
+            String s = cleanMerchant(um.group(1));
+            if (s.isEmpty() || s.matches("(?i)^[0-9@.\\s]+$")) continue;
+            String l = s.toLowerCase(Locale.US);
+            if (l.contains("bank") || l.contains("a/c")) continue;
+            return s;
         }
         return "";
+    }
+
+    /** Trims a raw merchant candidate at trailer words/punctuation. */
+    private static String cleanMerchant(String s) {
+        s = s.trim().replaceAll("^[\\s:;,-]+", "").replaceAll("[\\s:;,.-]+$", "");
+        String l = s.toLowerCase(Locale.US);
+        int best = s.length();
+        for (String cut : new String[]{" on ", " via ", " is ", " was ", " has ",
+                                       " ref ", " ref:", ".ref", " txn ", " not ", " rrn",
+                                       ".rrn", " upi:", " upi ", " using ",
+                                       " bal", " avl", " -", ";", ","}) {
+            int i = l.indexOf(cut);
+            if (i > 1 && i < best) best = i;
+        }
+        // Cut at date shapes ("... 16-NOV-2025").
+        Matcher dm = Pattern.compile("\\b\\d{1,2}[-/][A-Za-z]{3}[-/]\\d{2,4}\\b").matcher(s);
+        if (dm.find() && dm.start() > 1 && dm.start() < best) best = dm.start();
+        s = s.substring(0, best).trim().replaceAll("[\\s:;,.-]+$", "");
+        // Drop noise prefixes like "VPA " / "UPI/" / "UPI/DR/<rrn>/" and a
+        // trailing single-letter UPI tag ("/u") BEFORE the length cap, so the
+        // cap never chops a real name that follows a narration prefix.
+        s = s.replaceFirst("(?i)^vpa\\s+", "")
+             .replaceFirst("(?i)^upi/[^/]+/[A-Z]?\\d+/", "")
+             .replaceFirst("(?i)^upi/", "")
+             .replaceFirst("/[a-zA-Z]$", "");
+        if (s.length() > 34) s = s.substring(0, 34).trim().replaceAll("[\\s:;,.-]+$", "");
+        return s.length() >= 2 ? s : "";
     }
 
     private static long extractDueDate(String body, long smsTs) {
