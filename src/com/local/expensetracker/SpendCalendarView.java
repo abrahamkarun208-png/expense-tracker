@@ -47,34 +47,46 @@ public class SpendCalendarView extends LinearLayout {
         super(context, attrs);
         setOrientation(VERTICAL);
         build();
-        showCurrentMonth();
+        Calendar _c = Calendar.getInstance();
+        year = _c.get(Calendar.YEAR);
+        month = _c.get(Calendar.MONTH);
+        selectedDay = TxnGrouper.dayStart(_c.getTimeInMillis());
+        render();
     }
 
     public void setOnDaySelectListener(OnDaySelectListener l) {
         this.listener = l;
     }
 
-    public int getYear() { return year; }
-    public int getMonth() { return month; }
-
-    public boolean hasSpending(long dayStart) {
-        Double v = spendByDay.get(dayStart);
-        return v != null && v > 0;
+    public boolean hasActivity(long dayStart) {
+        Double s = spendByDay.get(dayStart);
+        Double i = incomeByDay.get(dayStart);
+        return (s != null && s > 0) || (i != null && i > 0);
     }
 
-    public void showCurrentMonth() {
-        Calendar c = Calendar.getInstance();
-        year = c.get(Calendar.YEAR);
-        month = c.get(Calendar.MONTH);
-        selectedDay = TxnGrouper.dayStart(c.getTimeInMillis());
+    /** Hides the built-in month arrows; the screen's month navigator drives it. */
+    public void setNavVisible(boolean visible) {
+        prevBtn.setVisibility(visible ? VISIBLE : GONE);
+        nextBtn.setVisibility(visible ? VISIBLE : GONE);
+    }
+
+    /** Shows the given month, keeping the selected day when it falls inside. */
+    public void showMonth(int year, int month, long selectedDay) {
+        this.year = year;
+        this.month = month;
+        Calendar mc = Calendar.getInstance();
+        mc.set(year, month, 1, 0, 0, 0);
+        mc.set(Calendar.MILLISECOND, 0);
+        long mStart = mc.getTimeInMillis();
+        mc.add(Calendar.MONTH, 1);
+        long mEnd = mc.getTimeInMillis() - 1;
+        this.selectedDay = (selectedDay >= mStart && selectedDay <= mEnd)
+            ? selectedDay : mStart;
         render();
     }
 
-    public void setState(int year, int month, long selectedDay,
-                         Map<Long, Double> spend, Map<Long, Double> income) {
-        this.year = year;
-        this.month = month;
-        this.selectedDay = selectedDay;
+    /** Replaces the per-day spending/income maps and re-renders. */
+    public void setMaps(Map<Long, Double> spend, Map<Long, Double> income) {
         this.spendByDay = spend == null ? new HashMap<Long, Double>() : spend;
         this.incomeByDay = income == null ? new HashMap<Long, Double>() : income;
         render();

@@ -13,18 +13,189 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textSize="24sp"
+            android:text="Expense Tracker"
+            android:textSize="26sp"
             android:textStyle="bold"
             android:textColor="@color/ink" />
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Month navigator: drives the NET card, Month tab and Calendar -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/app_sub"
-            android:textSize="12sp"
-            android:textColor="@color/muted"
-            android:layout_marginTop="2dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="10dp">
+
+            <TextView
+                android:id="@+id/monthPrev"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:text="&#8249;"
+                android:textSize="28sp"
+                android:textColor="@color/muted" />
+
+            <TextView
+                android:id="@+id/monthTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="October 2026"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textColor="@color/ink" />
+
+            <TextView
+                android:id="@+id/monthNext"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:text="&#8250;"
+                android:textSize="28sp"
+                android:textColor="@color/muted" />
+        </LinearLayout>
+
+        <!-- NET hero card -->
+        <LinearLayout
+            android:id="@+id/netCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/hero_card"
+            android:padding="20dp"
+            android:layout_marginTop="6dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/netLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="NET THIS MONTH"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/muted" />
+
+                <TextView
+                    android:id="@+id/netAmount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="+&#8377;0"
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/credit" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="14dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="@drawable/tile_income"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="&#8593; INCOME"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/credit" />
+
+                    <TextView
+                        android:id="@+id/incomeTileAmt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="&#8377;0"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/credit"
+                        android:layout_marginTop="4dp" />
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="12dp"
+                    android:layout_height="wrap_content" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="@drawable/tile_expense"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="&#8595; EXPENSES"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/debit" />
+
+                    <TextView
+                        android:id="@+id/expenseTileAmt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="&#8377;0"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/debit"
+                        android:layout_marginTop="4dp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/netBar"
+                android:layout_width="match_parent"
+                android:layout_height="8dp"
+                android:orientation="horizontal"
+                android:layout_marginTop="14dp">
+
+                <View
+                    android:id="@+id/netBarFill"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="0"
+                    android:background="@color/debit" />
+
+                <View
+                    android:id="@+id/netBarRest"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="100"
+                    android:background="@color/bar_track" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/pctCaption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/muted"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/duesLine"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:textSize="12sp"
+                android:textColor="@color/muted"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/permNotice"
@@ -45,151 +216,122 @@
             android:layout_marginTop="8dp"
             android:text="@string/grant"
             android:background="@drawable/btn_primary"
-            android:textColor="#FFFFFF" />
+            android:textColor="#0F1712" />
 
-        <!-- Hero total card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/hero_card"
-            android:padding="20dp"
-            android:layout_marginTop="14dp">
-
-            <TextView
-                android:id="@+id/totalLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Spent today"
-                android:textSize="13sp"
-                android:textColor="#CDE3D4" />
-
-            <TextView
-                android:id="@+id/totalView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="₹0"
-                android:textSize="38sp"
-                android:textStyle="bold"
-                android:textColor="#FFFFFF"
-                android:layout_marginTop="4dp" />
-
-            <TextView
-                android:id="@+id/txnCountView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0 transactions"
-                android:textSize="12sp"
-                android:textColor="#CDE3D4"
-                android:layout_marginTop="4dp" />
-
-            <TextView
-                android:id="@+id/incomeView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Income ₹0"
-                android:textSize="14sp"
-                android:textColor="#CDE3D4"
-                android:layout_marginTop="8dp" />
-
-            <TextView
-                android:id="@+id/netView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Net ₹0"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:textColor="#FFFFFF"
-                android:layout_marginTop="2dp" />
-
-            <TextView
-                android:id="@+id/overView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                android:textSize="13sp"
-                android:textColor="#FFB4B4"
-                android:layout_marginTop="2dp" />
-
-            <TextView
-                android:id="@+id/pctView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                android:textSize="12sp"
-                android:textColor="#CDE3D4"
-                android:layout_marginTop="6dp" />
-
-            <TextView
-                android:id="@+id/duesView"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                android:textSize="12sp"
-                android:textColor="#CDE3D4"
-                android:layout_marginTop="6dp" />
-        </LinearLayout>
-
-        <!-- Period tabs -->
+        <!-- Period tabs with underline indicator -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:background="@drawable/tab_bar"
-            android:padding="4dp"
-            android:layout_marginTop="14dp">
+            android:layout_marginTop="16dp">
 
-            <Button
-                android:id="@+id/btnDay"
+            <LinearLayout
+                android:id="@+id/tabDay"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/tab_daily"
-                android:textSize="12sp"
-                android:background="@drawable/tab_selected"
-                android:textColor="#FFFFFF"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp" />
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingTop="8dp"
+                android:paddingBottom="4dp">
 
-            <Button
-                android:id="@+id/btnWeek"
+                <TextView
+                    android:id="@+id/tabDayText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Day"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/ink" />
+
+                <View
+                    android:id="@+id/tabDayInd"
+                    android:layout_width="36dp"
+                    android:layout_height="3dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@color/primary" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tabWeek"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/tab_weekly"
-                android:textSize="12sp"
-                android:background="@null"
-                android:textColor="@color/ink"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp" />
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingTop="8dp"
+                android:paddingBottom="4dp">
 
-            <Button
-                android:id="@+id/btnMonth"
+                <TextView
+                    android:id="@+id/tabWeekText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Week"
+                    android:textSize="15sp"
+                    android:textColor="@color/muted" />
+
+                <View
+                    android:id="@+id/tabWeekInd"
+                    android:layout_width="36dp"
+                    android:layout_height="3dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@color/primary"
+                    android:visibility="invisible" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tabMonth"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/tab_monthly"
-                android:textSize="12sp"
-                android:background="@null"
-                android:textColor="@color/ink"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp" />
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingTop="8dp"
+                android:paddingBottom="4dp">
 
-            <Button
-                android:id="@+id/btnCal"
+                <TextView
+                    android:id="@+id/tabMonthText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Month"
+                    android:textSize="15sp"
+                    android:textColor="@color/muted" />
+
+                <View
+                    android:id="@+id/tabMonthInd"
+                    android:layout_width="36dp"
+                    android:layout_height="3dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@color/primary"
+                    android:visibility="invisible" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tabCal"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/tab_calendar"
-                android:textSize="12sp"
-                android:background="@null"
-                android:textColor="@color/ink"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp" />
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingTop="8dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/tabCalText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Calendar"
+                    android:textSize="15sp"
+                    android:textColor="@color/muted" />
+
+                <View
+                    android:id="@+id/tabCalInd"
+                    android:layout_width="36dp"
+                    android:layout_height="3dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@color/primary"
+                    android:visibility="invisible" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Spending breakdown (weekly / monthly) -->
@@ -304,16 +446,12 @@
             </LinearLayout>
         </LinearLayout>
 
-        <TextView style="@style/SectionHeader"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/transactions" />
-
         <LinearLayout
             android:id="@+id/txnContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:id="@+id/emptyTxns"
@@ -354,7 +492,7 @@
             android:layout_marginBottom="8dp"
             android:text="@string/rescan"
             android:background="@drawable/btn_primary"
-            android:textColor="#FFFFFF" />
+            android:textColor="#0F1712" />
 
         <TextView
             android:id="@+id/appVersion"

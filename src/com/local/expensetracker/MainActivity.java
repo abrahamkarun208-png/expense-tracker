@@ -49,17 +49,25 @@ public class MainActivity extends Activity {
     private DbHelper db;
     private LinearLayout txnContainer;
     private LinearLayout dueContainer;
-    private TextView totalView;
-    private TextView totalLabel;
-    private TextView txnCountView;
-    private TextView incomeView;
-    private TextView netView;
-    private TextView overView;
-    private TextView pctView;
-    private TextView duesView;
     private TextView permNotice;
     private Button permButton;
-    private Button btnDay, btnWeek, btnMonth, btnCal;
+    // NET hero card
+    private TextView netLabel;
+    private TextView netAmount;
+    private TextView incomeTileAmt;
+    private TextView expenseTileAmt;
+    private View netBarFill;
+    private View netBarRest;
+    private TextView pctCaption;
+    private TextView duesLine;
+    // Month navigator (drives NET card, Month tab and Calendar)
+    private TextView monthTitle;
+    private int navYear;
+    private int navMonth;
+    // Period tabs
+    private LinearLayout tabDay, tabWeek, tabMonth, tabCal;
+    private TextView tabDayText, tabWeekText, tabMonthText, tabCalText;
+    private View tabDayInd, tabWeekInd, tabMonthInd, tabCalInd;
     private LinearLayout calCard;
     private SpendCalendarView spendCal;
     private UpdateChecker updateChecker;
@@ -98,27 +106,37 @@ public class MainActivity extends Activity {
         dueContainer = findViewById(R.id.dueContainer);
         emptyTxns = findViewById(R.id.emptyTxns);
         emptyDues = findViewById(R.id.emptyDues);
-        totalView = findViewById(R.id.totalView);
-        totalLabel = findViewById(R.id.totalLabel);
-        txnCountView = findViewById(R.id.txnCountView);
-        incomeView = findViewById(R.id.incomeView);
-        netView = findViewById(R.id.netView);
-        overView = findViewById(R.id.overView);
-        pctView = findViewById(R.id.pctView);
-        duesView = findViewById(R.id.duesView);
+        netLabel = findViewById(R.id.netLabel);
+        netAmount = findViewById(R.id.netAmount);
+        incomeTileAmt = findViewById(R.id.incomeTileAmt);
+        expenseTileAmt = findViewById(R.id.expenseTileAmt);
+        netBarFill = findViewById(R.id.netBarFill);
+        netBarRest = findViewById(R.id.netBarRest);
+        pctCaption = findViewById(R.id.pctCaption);
+        duesLine = findViewById(R.id.duesLine);
+        monthTitle = findViewById(R.id.monthTitle);
+        tabDay = findViewById(R.id.tabDay);
+        tabWeek = findViewById(R.id.tabWeek);
+        tabMonth = findViewById(R.id.tabMonth);
+        tabCal = findViewById(R.id.tabCal);
+        tabDayText = findViewById(R.id.tabDayText);
+        tabWeekText = findViewById(R.id.tabWeekText);
+        tabMonthText = findViewById(R.id.tabMonthText);
+        tabCalText = findViewById(R.id.tabCalText);
+        tabDayInd = findViewById(R.id.tabDayInd);
+        tabWeekInd = findViewById(R.id.tabWeekInd);
+        tabMonthInd = findViewById(R.id.tabMonthInd);
+        tabCalInd = findViewById(R.id.tabCalInd);
         permNotice = findViewById(R.id.permNotice);
         permButton = findViewById(R.id.permButton);
-        btnDay = findViewById(R.id.btnDay);
-        btnWeek = findViewById(R.id.btnWeek);
-        btnMonth = findViewById(R.id.btnMonth);
-        btnCal = findViewById(R.id.btnCal);
         calCard = findViewById(R.id.calCard);
         spendCal = findViewById(R.id.spendCal);
+        spendCal.setNavVisible(false); // the top month navigator drives it
         spendCal.setOnDaySelectListener(new SpendCalendarView.OnDaySelectListener() {
             @Override public void onDaySelect(long dayStartMs) {
                 calDayMs = dayStartMs;
                 refreshUi();
-                if (spendCal.hasSpending(dayStartMs)) showDayMerchants(dayStartMs);
+                if (spendCal.hasActivity(dayStartMs)) showDayMerchants(dayStartMs);
             }
         });
         pieCard = findViewById(R.id.pieCard);
@@ -129,7 +147,7 @@ public class MainActivity extends Activity {
                 if (index >= 0 && index < pieSlices.size()
                         && index < pieMembers.size()) {
                     showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
-                        period == 1 ? "this week" : "last 30 days");
+                        period == 1 ? "this week" : monthTitle.getText().toString());
                 }
             }
         });
@@ -143,7 +161,9 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
 
         calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
-        spendCal.showCurrentMonth();
+        Calendar navInit = Calendar.getInstance();
+        navYear = navInit.get(Calendar.YEAR);
+        navMonth = navInit.get(Calendar.MONTH);
 
         updateChecker = new UpdateChecker(this);
         TextView checkUpdates = findViewById(R.id.checkUpdates);
@@ -156,23 +176,29 @@ public class MainActivity extends Activity {
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
-                if (v == btnDay) period = 0;
-                else if (v == btnWeek) period = 1;
-                else if (v == btnMonth) period = 2;
+                if (v == tabDay) period = 0;
+                else if (v == tabWeek) period = 1;
+                else if (v == tabMonth) period = 2;
                 else {
                     period = 3;
-                    calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
-                    spendCal.showCurrentMonth();
+                    syncCalendar();
                 }
-                stylePeriodButtons();
+                stylePeriodTabs();
                 refreshUi();
             }
         };
-        btnDay.setOnClickListener(periodClick);
-        btnWeek.setOnClickListener(periodClick);
-        btnMonth.setOnClickListener(periodClick);
-        btnCal.setOnClickListener(periodClick);
-        stylePeriodButtons();
+        tabDay.setOnClickListener(periodClick);
+        tabWeek.setOnClickListener(periodClick);
+        tabMonth.setOnClickListener(periodClick);
+        tabCal.setOnClickListener(periodClick);
+        stylePeriodTabs();
+
+        findViewById(R.id.monthPrev).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { shiftMonth(-1); }
+        });
+        findViewById(R.id.monthNext).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { shiftMonth(1); }
+        });
 
         permButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { askPermission(); }
@@ -308,19 +334,134 @@ public class MainActivity extends Activity {
         permButton.setVisibility(View.GONE);
     }
 
-    private void stylePeriodButtons() {
-        Button[] btns = {btnDay, btnWeek, btnMonth, btnCal};
-        int selBg = R.drawable.tab_selected;
-        int selFg = 0xFFFFFFFF;
-        int unselFg = getColor(R.color.ink);
-        for (int i = 0; i < btns.length; i++) {
-            if (i == period) {
-                btns[i].setBackgroundResource(selBg);
-                btns[i].setTextColor(selFg);
+    /** Underline-tab styling: selected tab gets ink text + green underline. */
+    private void stylePeriodTabs() {
+        LinearLayout[] tabs = {tabDay, tabWeek, tabMonth, tabCal};
+        TextView[] texts = {tabDayText, tabWeekText, tabMonthText, tabCalText};
+        View[] inds = {tabDayInd, tabWeekInd, tabMonthInd, tabCalInd};
+        for (int i = 0; i < tabs.length; i++) {
+            boolean sel = (i == period);
+            texts[i].setTextColor(getColor(sel ? R.color.ink : R.color.muted));
+            texts[i].setTypeface(sel ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            inds[i].setVisibility(sel ? View.VISIBLE : View.INVISIBLE);
+        }
+    }
+
+    /** Start/end millis of the navigated month. */
+    private long[] navMonthRange() {
+        Calendar mc = Calendar.getInstance();
+        mc.set(navYear, navMonth, 1, 0, 0, 0);
+        mc.set(Calendar.MILLISECOND, 0);
+        long s = mc.getTimeInMillis();
+        mc.add(Calendar.MONTH, 1);
+        return new long[]{s, mc.getTimeInMillis() - 1};
+    }
+
+    /** Month navigator: never past the current month. */
+    private void shiftMonth(int delta) {
+        Calendar c = Calendar.getInstance();
+        c.set(navYear, navMonth, 1);
+        c.add(Calendar.MONTH, delta);
+        Calendar now = Calendar.getInstance();
+        if (c.get(Calendar.YEAR) > now.get(Calendar.YEAR)
+                || (c.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+                    && c.get(Calendar.MONTH) > now.get(Calendar.MONTH))) {
+            return;
+        }
+        navYear = c.get(Calendar.YEAR);
+        navMonth = c.get(Calendar.MONTH);
+        if (period == 3) syncCalendar();
+        refreshNetCard();
+        refreshUi();
+    }
+
+    /** Keeps the calendar's selected day inside the navigated month. */
+    private void syncCalendar() {
+        long[] r = navMonthRange();
+        if (calDayMs < r[0] || calDayMs > r[1]) {
+            Calendar now = Calendar.getInstance();
+            if (navYear == now.get(Calendar.YEAR)
+                    && navMonth == now.get(Calendar.MONTH)) {
+                calDayMs = TxnGrouper.dayStart(System.currentTimeMillis());
             } else {
-                btns[i].setBackgroundResource(0);
-                btns[i].setTextColor(unselFg);
+                calDayMs = r[0];
             }
+        }
+        spendCal.showMonth(navYear, navMonth, calDayMs);
+        spendCal.setMaps(db.getDailySpending(r[0], r[1]),
+            db.getDailyIncome(r[0], r[1]));
+    }
+
+    /**
+     * The NET hero card: this navigated month's Income, Expenses, Net and
+     * expenses-as-%-of-income, matching the approved mockup.
+     */
+    private void refreshNetCard() {
+        long[] r = navMonthRange();
+        double exp = db.sumSpentBetween(r[0], r[1]);
+        double inc = db.sumIncomeBetween(r[0], r[1]);
+        double net = inc - exp;
+
+        String mName = new SimpleDateFormat("MMMM yyyy",
+            Locale.getDefault()).format(new Date(r[0]));
+        monthTitle.setText(mName);
+        Calendar now = Calendar.getInstance();
+        boolean cur = navYear == now.get(Calendar.YEAR)
+            && navMonth == now.get(Calendar.MONTH);
+        netLabel.setText(cur ? "NET THIS MONTH" : "NET \u00B7 "
+            + new SimpleDateFormat("MMM yyyy", Locale.getDefault())
+                .format(new Date(r[0])).toUpperCase(Locale.getDefault()));
+
+        netAmount.setText((net < 0 ? "-\u20B9" : "+\u20B9")
+            + String.format(Locale.US, "%,.0f", Math.abs(net)));
+        netAmount.setTextColor(getColor(net < 0 ? R.color.debit : R.color.credit));
+        incomeTileAmt.setText("\u20B9" + String.format(Locale.US, "%,.0f", inc));
+        expenseTileAmt.setText("\u20B9" + String.format(Locale.US, "%,.0f", exp));
+
+        if (inc > 0) {
+            int pct = (int) Math.round(exp / inc * 100);
+            int fill = Math.min(pct, 100);
+            netBarFill.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, fill));
+            netBarRest.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(100 - fill, 1)));
+            if (exp <= inc) {
+                pctCaption.setText("Expenses used " + pct + "% of income"
+                    + " \u2014 you kept " + (100 - pct) + "%");
+            } else {
+                pctCaption.setText("Expenses were " + pct + "% of income"
+                    + " \u2014 you overspent by \u20B9"
+                    + String.format(Locale.US, "%,.0f", exp - inc));
+            }
+        } else if (exp > 0) {
+            netBarFill.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, 100));
+            netBarRest.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, 1));
+            pctCaption.setText("No income recorded this month");
+        } else {
+            netBarFill.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, 1));
+            netBarRest.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, 100));
+            pctCaption.setText("No activity this month");
+        }
+
+        double unpaid = db.unpaidDuesTotal();
+        if (unpaid > 0) {
+            CardDue first = db.earliestUnpaidDue();
+            String dueDate = "";
+            if (first != null && first.dueTs > 0) {
+                dueDate = ", due " + new SimpleDateFormat("d MMM",
+                    Locale.getDefault()).format(new Date(first.dueTs));
+            }
+            duesLine.setVisibility(View.VISIBLE);
+            duesLine.setText("\u20B9"
+                + String.format(Locale.US, "%,.0f", unpaid)
+                + " of your spending is unpaid card dues" + dueDate + "."
+                + " Paying the bill adds \u20B90 to expenses.");
+        } else {
+            duesLine.setVisibility(View.GONE);
         }
     }
 
@@ -406,114 +547,32 @@ public class MainActivity extends Activity {
     }
 
     private void refreshUi() {
+        refreshNetCard();
         long now = System.currentTimeMillis();
         long start, end;
-        String label;
         if (period == 0) {
             start = TxnGrouper.dayStart(now);
             end = now;
-            label = "Expenses today";
         } else if (period == 1) {
-            // Calendar week: Sunday to Saturday, weeks start on Sunday.
+            // Calendar week: Sunday to Saturday.
             start = TxnGrouper.weekStart(now);
             end = now;
-            label = "Expenses this week";
         } else if (period == 2) {
-            start = TxnGrouper.dayStart(now - 29 * DAY_MS);
-            end = now;
-            label = "Expenses this month";
+            // The navigated calendar month, from the 1st.
+            long[] r = navMonthRange();
+            start = r[0];
+            end = r[1];
         } else {
-            // Calendar: use the month currently displayed in the custom view.
-            int y = spendCal.getYear();
-            int mo = spendCal.getMonth();
-            Calendar mc = Calendar.getInstance();
-            mc.set(y, mo, 1, 0, 0, 0);
-            mc.set(Calendar.MILLISECOND, 0);
-            long mStart = mc.getTimeInMillis();
-            mc.add(Calendar.MONTH, 1);
-            long mEnd = mc.getTimeInMillis() - 1;
-            spendCal.setState(y, mo, calDayMs, db.getDailySpending(mStart, mEnd),
-                db.getDailyIncome(mStart, mEnd));
+            syncCalendar();
             start = calDayMs;
             end = calDayMs + DAY_MS - 1;
-            label = "Expenses on " + new SimpleDateFormat("dd MMM",
-                Locale.getDefault()).format(new Date(calDayMs));
         }
         calCard.setVisibility(period == 3 ? View.VISIBLE : View.GONE);
 
-        double total = db.sumSpentBetween(start, end);
-        double income = db.sumIncomeBetween(start, end);
-        totalView.setText("\u20B9" + String.format(Locale.US, "%,.0f", total));
-        totalLabel.setText(label);
-
-        incomeView.setText("Income \u20B9"
-            + String.format(Locale.US, "%,.0f", income));
-
-        // Net = Income - Expenses. Card swipes already count as expenses at
-        // swipe time, and paying the card bill adds nothing, so each rupee
-        // is counted exactly once.
-        double net = income - total;
-        String netStr = "\u20B9"
-            + String.format(Locale.US, "%,.0f", Math.abs(net));
-        netView.setText("Net " + (net < 0 ? "-" : "+") + netStr);
-        if (net < 0) {
-            netView.setTextColor(0xFFFFB4B4);
-            overView.setVisibility(View.VISIBLE);
-            overView.setText("You spent \u20B9"
-                + String.format(Locale.US, "%,.0f", -net)
-                + " more than you earned");
-        } else {
-            netView.setTextColor(0xFFFFFFFF);
-            overView.setVisibility(View.GONE);
-        }
-
-        // Expenses as a percentage of income.
-        if (income > 0) {
-            int pct = (int) Math.round(total / income * 100);
-            pctView.setVisibility(View.VISIBLE);
-            pctView.setText("Expenses are " + pct + "% of income");
-        } else {
-            pctView.setVisibility(View.GONE);
-        }
-
-        // Unpaid card dues called out beneath Net, per the approved design.
-        double unpaid = db.unpaidDuesTotal();
-        if (unpaid > 0) {
-            CardDue first = db.earliestUnpaidDue();
-            String dueDate = "";
-            if (first != null && first.dueTs > 0) {
-                dueDate = ", due " + new SimpleDateFormat("d MMM",
-                    Locale.getDefault()).format(new Date(first.dueTs));
-            }
-            duesView.setVisibility(View.VISIBLE);
-            duesView.setText("\u20B9"
-                + String.format(Locale.US, "%,.0f", unpaid)
-                + " of your spending is unpaid card dues" + dueDate + "."
-                + " Paying the bill adds \u20B90 to expenses.");
-        } else {
-            duesView.setVisibility(View.GONE);
-        }
-
         List<Transaction> txns = db.getTxnsBetween(start, end);
-        int nExp = 0, nInc = 0;
-        for (Transaction t : txns) {
-            if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) nExp++;
-            else if ("CREDIT".equals(t.type)) nInc++;
-        }
-        if (nInc > 0) {
-            txnCountView.setText(nExp + (nExp == 1 ? " expense" : " expenses")
-                + " \u00B7 " + nInc + (nInc == 1 ? " income" : " income"));
-        } else {
-            int n = txns.size();
-            txnCountView.setText(n == 1 ? "1 transaction" : n + " transactions");
-        }
-
-        List<Object> rows;
-        if (period == 1 || period == 2) {
-            rows = TxnGrouper.groupByDay(txns);
-        } else {
-            rows = new ArrayList<Object>(txns);
-        }
+        // Day-grouped headers everywhere: "TODAY \u00B7 SAT 3 OCT" with
+        // Exp/Inc totals, matching the approved mockup.
+        List<Object> rows = TxnGrouper.groupByDay(txns);
         new TxnAdapter(this, rows).populate(txnContainer);
         emptyTxns.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
 
@@ -603,7 +662,7 @@ public class MainActivity extends Activity {
         row.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
-                        period == 1 ? "this week" : "last 30 days");
+                        period == 1 ? "this week" : monthTitle.getText().toString());
             }
         });
 

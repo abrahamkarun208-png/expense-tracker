@@ -74,9 +74,9 @@ public class PieChartView extends View {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         if (slices.isEmpty() || total <= 0) {
-            paint.setColor(0xFFE5E7EB);
+            paint.setColor(0xFF2A3B2F);
             canvas.drawCircle(cx, cy, r, paint);
-            paint.setColor(Color.WHITE);
+            paint.setColor(getContext().getColor(R.color.card));
             canvas.drawCircle(cx, cy, r * 0.58f, paint);
             return;
         }
@@ -93,11 +93,11 @@ public class PieChartView extends View {
         }
 
         // donut hole
-        paint.setColor(Color.WHITE);
+        paint.setColor(getContext().getColor(R.color.card));
         canvas.drawCircle(cx, cy, r * 0.58f, paint);
 
         // center total
-        paint.setColor(0xFF17251D);
+        paint.setColor(0xFFEFF4EF);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(Typeface.DEFAULT_BOLD);
         paint.setTextSize(14 * density);

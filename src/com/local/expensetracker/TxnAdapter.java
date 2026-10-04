@@ -62,12 +62,14 @@ public class TxnAdapter extends BaseAdapter {
     private View headerView(TxnGrouper.DayHeader h, View v, ViewGroup parent) {
         if (v == null) v = inflater.inflate(R.layout.item_day_header, parent, false);
         TextView label = v.findViewById(R.id.dayLabel);
-        String count = h.count == 1 ? "1 transaction" : h.count + " transactions";
-        label.setText(h.label + "  \u00B7  " + count);
+        // Mockup style: "TODAY \u00B7 SAT 3 OCT".
+        String l = h.label.replace(", ", " \u00B7 ")
+            .toUpperCase(Locale.getDefault());
+        label.setText(l);
         TextView total = v.findViewById(R.id.dayTotal);
-        String t = "\u20B9" + String.format(Locale.US, "%,.0f", h.spent);
+        String t = "Exp \u20B9" + String.format(Locale.US, "%,.0f", h.spent);
         if (h.income > 0) {
-            t += "  \u00B7  +\u20B9"
+            t += " \u00B7 Inc \u20B9"
                 + String.format(Locale.US, "%,.0f", h.income);
         }
         total.setText(t);
@@ -77,54 +79,39 @@ public class TxnAdapter extends BaseAdapter {
     private View txnView(Transaction t, View v, ViewGroup parent) {
         if (v == null) v = inflater.inflate(R.layout.item_txn, parent, false);
 
-        TextView badge = v.findViewById(R.id.bankBadge);
-        badge.setText(shortCode(t.bankCode));
-
-        TextView merchant = v.findViewById(R.id.merchant);
-        String m = t.merchant == null || t.merchant.isEmpty()
-            ? typeLabel(t.type) : t.merchant;
-        if ("CARD_SPEND".equals(t.type) && t.card4 != null && !t.card4.isEmpty()) {
-            m += "  \u2022\u2022\u2022\u2022 " + t.card4;
-        }
-        merchant.setText(m);
-
-        TextView sub = v.findViewById(R.id.sub);
-        sub.setText(t.bankName + " \u00B7 " + df.format(new Date(t.ts)));
-
-        TextView amount = v.findViewById(R.id.amount);
-        amount.setText(fmt(t));
         int color;
         if ("CREDIT".equals(t.type)) {
             color = ctx.getColor(R.color.credit);
         } else if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) {
             color = ctx.getColor(R.color.debit);
         } else {
-            color = ctx.getColor(R.color.ink);
+            color = ctx.getColor(R.color.transfer);
         }
+
+        // Mockup style: letter badge tinted like the amount.
+        TextView badge = v.findViewById(R.id.badge);
+        String m0 = t.merchant == null || t.merchant.isEmpty()
+            ? typeLabel(t.type) : t.merchant;
+        badge.setText(m0.substring(0, 1).toUpperCase(Locale.getDefault()));
+        badge.setTextColor(color);
+
+        TextView merchant = v.findViewById(R.id.merchant);
+        merchant.setText(m0);
+
+        TextView sub = v.findViewById(R.id.sub);
+        String s = t.bankName == null ? "" : t.bankName;
+        if ("CARD_SPEND".equals(t.type) && t.card4 != null && !t.card4.isEmpty()) {
+            s += " \u2022\u2022\u2022\u2022 " + t.card4;
+        }
+        s += (s.isEmpty() ? "" : " \u00B7 ")
+            + new SimpleDateFormat("h:mm a", Locale.getDefault())
+                .format(new Date(t.ts));
+        sub.setText(s);
+
+        TextView amount = v.findViewById(R.id.amount);
+        amount.setText(fmt(t));
         amount.setTextColor(color);
-
-        TextView pill = v.findViewById(R.id.typePill);
-        pill.setText(typeLabel(t.type));
-        int bg;
-        int fg;
-        switch (t.type) {
-            case "DEBIT":
-                bg = R.drawable.pill_debit; fg = ctx.getColor(R.color.debit); break;
-            case "CREDIT":
-                bg = R.drawable.pill_credit; fg = ctx.getColor(R.color.credit); break;
-            case "TRANSFER":
-                bg = R.drawable.pill_transfer; fg = ctx.getColor(R.color.transfer); break;
-            default:
-                bg = R.drawable.pill_card; fg = ctx.getColor(R.color.muted); break;
-        }
-        pill.setBackgroundResource(bg);
-        pill.setTextColor(fg);
         return v;
-    }
-
-    private static String shortCode(String code) {
-        if (code == null) return "?";
-        return code.length() <= 6 ? code : code.substring(0, 6);
     }
 
     private static String typeLabel(String type) {
