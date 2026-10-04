@@ -200,6 +200,13 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { shiftMonth(1); }
         });
 
+        // Tapping either tile shows every account's income and expenses.
+        View.OnClickListener tileClick = new View.OnClickListener() {
+            @Override public void onClick(View v) { showAccountBreakdown(); }
+        };
+        findViewById(R.id.tileIncome).setOnClickListener(tileClick);
+        findViewById(R.id.tileExpense).setOnClickListener(tileClick);
+
         permButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { askPermission(); }
         });
@@ -692,6 +699,106 @@ public class MainActivity extends Activity {
         row.addView(name);
         row.addView(amt);
         pieLegend.addView(row);
+    }
+
+    /** Tapping a NET-card tile: every account's income and expenses. */
+    private void showAccountBreakdown() {
+        long[] r = navMonthRange();
+        List<DbHelper.AccountSummary> accounts = db.accountSummaries(r[0], r[1]);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText("Accounts");
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(getColor(R.color.ink));
+
+        TextView sub = new TextView(this);
+        sub.setText(monthTitle.getText().toString());
+        sub.setTextSize(13);
+        sub.setTextColor(getColor(R.color.muted));
+        sub.setPadding(0, dp(4), 0, dp(12));
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        if (accounts.isEmpty()) {
+            TextView t = new TextView(this);
+            t.setText("No account activity this month.");
+            t.setTextSize(13);
+            t.setTextColor(getColor(R.color.muted));
+            list.addView(t);
+        }
+        for (DbHelper.AccountSummary a : accounts) {
+            String name = (a.bankName == null || a.bankName.isEmpty())
+                ? (a.bankCode == null ? "Unknown" : a.bankCode) : a.bankName;
+            if (a.card4 != null && !a.card4.isEmpty()) {
+                name += " \u00B7\u00B7\u00B7\u00B7 " + a.card4;
+            }
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(0, dp(8), 0, dp(8));
+
+            TextView nameView = new TextView(this);
+            nameView.setText(name);
+            nameView.setTextSize(15);
+            nameView.setTypeface(Typeface.DEFAULT_BOLD);
+            nameView.setTextColor(getColor(R.color.ink));
+
+            LinearLayout figures = new LinearLayout(this);
+            figures.setOrientation(LinearLayout.HORIZONTAL);
+            figures.setPadding(0, dp(4), 0, 0);
+
+            TextView inc = new TextView(this);
+            inc.setText("\u2191 \u20B9"
+                + String.format(Locale.US, "%,.0f", a.income));
+            inc.setTextSize(13);
+            inc.setTextColor(getColor(R.color.credit));
+
+            TextView exp = new TextView(this);
+            exp.setText("\u2193 \u20B9"
+                + String.format(Locale.US, "%,.0f", a.expenses));
+            exp.setTextSize(13);
+            exp.setTextColor(getColor(R.color.debit));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(dp(16), 0, dp(16), 0);
+            exp.setLayoutParams(lp);
+
+            TextView net = new TextView(this);
+            double n = a.income - a.expenses;
+            net.setText("Net " + (n < 0 ? "-\u20B9" : "+\u20B9")
+                + String.format(Locale.US, "%,.0f", Math.abs(n)));
+            net.setTextSize(13);
+            net.setTextColor(getColor(R.color.muted));
+
+            figures.addView(inc);
+            figures.addView(exp);
+            figures.addView(net);
+            row.addView(nameView);
+            row.addView(figures);
+            list.addView(row);
+        }
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(list, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(380)));
+
+        root.addView(title);
+        root.addView(sub);
+        root.addView(sv);
+
+        new AlertDialog.Builder(this)
+            .setView(root)
+            .setPositiveButton("Close", null)
+            .show();
     }
 
     /** Calendar day tap: where the money went that day, by merchant. */

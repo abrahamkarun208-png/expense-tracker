@@ -163,6 +163,39 @@ public class DbHelper extends SQLiteOpenHelper {
         return s;
     }
 
+    /** Per-account income/expenses for a range, one row per bank + last-4. */
+    public static class AccountSummary {
+        public String bankCode;
+        public String bankName;
+        public String card4;
+        public double income;
+        public double expenses;
+    }
+
+    public List<AccountSummary> accountSummaries(long startTs, long endTs) {
+        List<AccountSummary> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT bankCode, bankName, card4,"
+                + " SUM(CASE WHEN type='CREDIT' THEN amount ELSE 0 END),"
+                + " SUM(CASE WHEN type IN ('DEBIT','CARD_SPEND') THEN amount ELSE 0 END)"
+                + " FROM txns WHERE ts>=? AND ts<=?"
+                + " AND type IN ('CREDIT','DEBIT','CARD_SPEND')"
+                + " GROUP BY bankCode, bankName, card4"
+                + " ORDER BY 5 DESC",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        while (c.moveToNext()) {
+            AccountSummary a = new AccountSummary();
+            a.bankCode = c.getString(0);
+            a.bankName = c.getString(1);
+            a.card4 = c.getString(2);
+            a.income = c.getDouble(3);
+            a.expenses = c.getDouble(4);
+            out.add(a);
+        }
+        c.close();
+        return out;
+    }
+
     /** The earliest unpaid due, for the "due <date>" callout. May be null. */
     public CardDue earliestUnpaidDue() {
         Cursor c = getReadableDatabase().rawQuery(
