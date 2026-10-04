@@ -52,6 +52,11 @@ public class MainActivity extends Activity {
     private TextView totalView;
     private TextView totalLabel;
     private TextView txnCountView;
+    private TextView incomeView;
+    private TextView netView;
+    private TextView overView;
+    private TextView pctView;
+    private TextView duesView;
     private TextView permNotice;
     private Button permButton;
     private Button btnDay, btnWeek, btnMonth, btnCal;
@@ -96,6 +101,11 @@ public class MainActivity extends Activity {
         totalView = findViewById(R.id.totalView);
         totalLabel = findViewById(R.id.totalLabel);
         txnCountView = findViewById(R.id.txnCountView);
+        incomeView = findViewById(R.id.incomeView);
+        netView = findViewById(R.id.netView);
+        overView = findViewById(R.id.overView);
+        pctView = findViewById(R.id.pctView);
+        duesView = findViewById(R.id.duesView);
         permNotice = findViewById(R.id.permNotice);
         permButton = findViewById(R.id.permButton);
         btnDay = findViewById(R.id.btnDay);
@@ -119,7 +129,7 @@ public class MainActivity extends Activity {
                 if (index >= 0 && index < pieSlices.size()
                         && index < pieMembers.size()) {
                     showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
-                        period == 1 ? "last 7 days" : "last 30 days");
+                        period == 1 ? "this week" : "last 30 days");
                 }
             }
         });
@@ -402,15 +412,16 @@ public class MainActivity extends Activity {
         if (period == 0) {
             start = TxnGrouper.dayStart(now);
             end = now;
-            label = "Spent today";
+            label = "Expenses today";
         } else if (period == 1) {
-            start = TxnGrouper.dayStart(now - 6 * DAY_MS);
+            // Calendar week: Sunday to Saturday, weeks start on Sunday.
+            start = TxnGrouper.weekStart(now);
             end = now;
-            label = "Spent in the last 7 days";
+            label = "Expenses this week";
         } else if (period == 2) {
             start = TxnGrouper.dayStart(now - 29 * DAY_MS);
             end = now;
-            label = "Spent in the last 30 days";
+            label = "Expenses this month";
         } else {
             // Calendar: use the month currently displayed in the custom view.
             int y = spendCal.getYear();
@@ -421,21 +432,81 @@ public class MainActivity extends Activity {
             long mStart = mc.getTimeInMillis();
             mc.add(Calendar.MONTH, 1);
             long mEnd = mc.getTimeInMillis() - 1;
-            spendCal.setState(y, mo, calDayMs, db.getDailySpending(mStart, mEnd));
+            spendCal.setState(y, mo, calDayMs, db.getDailySpending(mStart, mEnd),
+                db.getDailyIncome(mStart, mEnd));
             start = calDayMs;
             end = calDayMs + DAY_MS - 1;
-            label = "Spent on " + new SimpleDateFormat("dd MMM",
+            label = "Expenses on " + new SimpleDateFormat("dd MMM",
                 Locale.getDefault()).format(new Date(calDayMs));
         }
         calCard.setVisibility(period == 3 ? View.VISIBLE : View.GONE);
 
         double total = db.sumSpentBetween(start, end);
+        double income = db.sumIncomeBetween(start, end);
         totalView.setText("\u20B9" + String.format(Locale.US, "%,.0f", total));
         totalLabel.setText(label);
 
+        incomeView.setText("Income \u20B9"
+            + String.format(Locale.US, "%,.0f", income));
+
+        // Net = Income - Expenses. Card swipes already count as expenses at
+        // swipe time, and paying the card bill adds nothing, so each rupee
+        // is counted exactly once.
+        double net = income - total;
+        String netStr = "\u20B9"
+            + String.format(Locale.US, "%,.0f", Math.abs(net));
+        netView.setText("Net " + (net < 0 ? "-" : "+") + netStr);
+        if (net < 0) {
+            netView.setTextColor(0xFFFFB4B4);
+            overView.setVisibility(View.VISIBLE);
+            overView.setText("You spent \u20B9"
+                + String.format(Locale.US, "%,.0f", -net)
+                + " more than you earned");
+        } else {
+            netView.setTextColor(0xFFFFFFFF);
+            overView.setVisibility(View.GONE);
+        }
+
+        // Expenses as a percentage of income.
+        if (income > 0) {
+            int pct = (int) Math.round(total / income * 100);
+            pctView.setVisibility(View.VISIBLE);
+            pctView.setText("Expenses are " + pct + "% of income");
+        } else {
+            pctView.setVisibility(View.GONE);
+        }
+
+        // Unpaid card dues called out beneath Net, per the approved design.
+        double unpaid = db.unpaidDuesTotal();
+        if (unpaid > 0) {
+            CardDue first = db.earliestUnpaidDue();
+            String dueDate = "";
+            if (first != null && first.dueTs > 0) {
+                dueDate = ", due " + new SimpleDateFormat("d MMM",
+                    Locale.getDefault()).format(new Date(first.dueTs));
+            }
+            duesView.setVisibility(View.VISIBLE);
+            duesView.setText("\u20B9"
+                + String.format(Locale.US, "%,.0f", unpaid)
+                + " of your spending is unpaid card dues" + dueDate + "."
+                + " Paying the bill adds \u20B90 to expenses.");
+        } else {
+            duesView.setVisibility(View.GONE);
+        }
+
         List<Transaction> txns = db.getTxnsBetween(start, end);
-        int n = txns.size();
-        txnCountView.setText(n == 1 ? "1 transaction" : n + " transactions");
+        int nExp = 0, nInc = 0;
+        for (Transaction t : txns) {
+            if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) nExp++;
+            else if ("CREDIT".equals(t.type)) nInc++;
+        }
+        if (nInc > 0) {
+            txnCountView.setText(nExp + (nExp == 1 ? " expense" : " expenses")
+                + " \u00B7 " + nInc + (nInc == 1 ? " income" : " income"));
+        } else {
+            int n = txns.size();
+            txnCountView.setText(n == 1 ? "1 transaction" : n + " transactions");
+        }
 
         List<Object> rows;
         if (period == 1 || period == 2) {
@@ -532,7 +603,7 @@ public class MainActivity extends Activity {
         row.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
-                        period == 1 ? "last 7 days" : "last 30 days");
+                        period == 1 ? "this week" : "last 30 days");
             }
         });
 

@@ -126,6 +126,65 @@ public class DbHelper extends SQLiteOpenHelper {
         return s;
     }
 
+    /** Income (CREDIT) total in a range. Salary, refunds, credits from others. */
+    public double sumIncomeBetween(long startTs, long endTs) {
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT SUM(amount) FROM txns WHERE ts>=? AND ts<=?"
+                + " AND type='CREDIT'",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        double s = c.moveToFirst() && !c.isNull(0) ? c.getDouble(0) : 0;
+        c.close();
+        return s;
+    }
+
+    /** Income per day (CREDIT), keyed by day-start millis. */
+    public java.util.Map<Long, Double> getDailyIncome(long startTs, long endTs) {
+        java.util.Map<Long, Double> out = new java.util.HashMap<Long, Double>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT ts, amount FROM txns WHERE ts>=? AND ts<=?"
+                + " AND type='CREDIT'",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        while (c.moveToNext()) {
+            long day = TxnGrouper.dayStart(c.getLong(0));
+            Double v = out.get(day);
+            out.put(day, (v == null ? 0 : v) + c.getDouble(1));
+        }
+        c.close();
+        return out;
+    }
+
+    /** Total of card dues still unpaid (pending or overdue). */
+    public double unpaidDuesTotal() {
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT SUM(totalDue) FROM dues WHERE status IN ('PENDING','OUTSTANDING')",
+            null);
+        double s = c.moveToFirst() && !c.isNull(0) ? c.getDouble(0) : 0;
+        c.close();
+        return s;
+    }
+
+    /** The earliest unpaid due, for the "due <date>" callout. May be null. */
+    public CardDue earliestUnpaidDue() {
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid FROM dues"
+                + " WHERE status IN ('PENDING','OUTSTANDING')"
+                + " ORDER BY dueTs ASC LIMIT 1", null);
+        CardDue d = null;
+        if (c.moveToFirst()) {
+            d = new CardDue();
+            d.cardKey = c.getString(0);
+            d.bankName = c.getString(1);
+            d.card4 = c.getString(2);
+            d.totalDue = c.getDouble(3);
+            d.minDue = c.getDouble(4);
+            d.dueTs = c.getLong(5);
+            d.status = c.getString(6);
+            d.paid = c.getDouble(7);
+        }
+        c.close();
+        return d;
+    }
+
     /** Spending per day (DEBIT + CARD_SPEND), keyed by day-start millis. */
     public java.util.Map<Long, Double> getDailySpending(long startTs, long endTs) {
         java.util.Map<Long, Double> out = new java.util.HashMap<Long, Double>();

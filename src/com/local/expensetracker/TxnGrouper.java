@@ -21,10 +21,12 @@ public class TxnGrouper {
     public static class DayHeader {
         public final String label;
         public final double spent;   // DEBIT + CARD_SPEND total for the day
+        public final double income;  // CREDIT total for the day
         public final int count;
-        public DayHeader(String label, double spent, int count) {
+        public DayHeader(String label, double spent, double income, int count) {
             this.label = label;
             this.spent = spent;
+            this.income = income;
             this.count = count;
         }
     }
@@ -45,12 +47,15 @@ public class TxnGrouper {
         long today = dayStart(System.currentTimeMillis());
         for (Map.Entry<Long, List<Transaction>> e : buckets.entrySet()) {
             double spent = 0;
+            double income = 0;
             for (Transaction t : e.getValue()) {
                 if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) {
                     spent += t.amount;
+                } else if ("CREDIT".equals(t.type)) {
+                    income += t.amount;
                 }
             }
-            out.add(new DayHeader(dayLabel(e.getKey(), today), spent,
+            out.add(new DayHeader(dayLabel(e.getKey(), today), spent, income,
                     e.getValue().size()));
             out.addAll(e.getValue());
         }
@@ -65,6 +70,15 @@ public class TxnGrouper {
         c.set(Calendar.SECOND, 0);
         c.set(Calendar.MILLISECOND, 0);
         return c.getTimeInMillis();
+    }
+
+    /** Start of the calendar week containing ts. Weeks run Sunday-Saturday. */
+    public static long weekStart(long ts) {
+        long day = dayStart(ts);
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(day);
+        int back = c.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY; // 0 on Sunday
+        return day - back * 86400000L;
     }
 
     static String dayLabel(long dayStart, long todayStart) {

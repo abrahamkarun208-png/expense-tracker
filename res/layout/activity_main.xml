@@ -82,6 +82,52 @@
                 android:textSize="12sp"
                 android:textColor="#CDE3D4"
                 android:layout_marginTop="4dp" />
+
+            <TextView
+                android:id="@+id/incomeView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Income ₹0"
+                android:textSize="14sp"
+                android:textColor="#CDE3D4"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/netView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Net ₹0"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:id="@+id/overView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:textSize="13sp"
+                android:textColor="#FFB4B4"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:id="@+id/pctView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:textSize="12sp"
+                android:textColor="#CDE3D4"
+                android:layout_marginTop="6dp" />
+
+            <TextView
+                android:id="@+id/duesView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:textSize="12sp"
+                android:textColor="#CDE3D4"
+                android:layout_marginTop="6dp" />
         </LinearLayout>
 
         <!-- Period tabs -->
@@ -236,6 +282,23 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text=" under \u20B91,500"
+                    android:textSize="11sp"
+                    android:textColor="@color/muted" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="     " />
+
+                <View
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:background="@drawable/dot_income" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" income"
                     android:textSize="11sp"
                     android:textColor="@color/muted" />
             </LinearLayout>

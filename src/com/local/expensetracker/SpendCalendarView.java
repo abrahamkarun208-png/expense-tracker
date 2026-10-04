@@ -19,7 +19,8 @@ import java.util.Map;
 
 /**
  * Month calendar with a dot under every day that has spending
- * (DEBIT / CARD_SPEND). Pure Android views, no dependencies.
+ * (DEBIT / CARD_SPEND) and a green dot for days with income (CREDIT).
+ * Pure Android views, no dependencies.
  */
 public class SpendCalendarView extends LinearLayout {
 
@@ -33,6 +34,7 @@ public class SpendCalendarView extends LinearLayout {
     private int year, month; // month is 0-based
     private long selectedDay;
     private Map<Long, Double> spendByDay = new HashMap<Long, Double>();
+    private Map<Long, Double> incomeByDay = new HashMap<Long, Double>();
     private OnDaySelectListener listener;
 
     private TextView titleView;
@@ -69,11 +71,12 @@ public class SpendCalendarView extends LinearLayout {
     }
 
     public void setState(int year, int month, long selectedDay,
-                         Map<Long, Double> spend) {
+                         Map<Long, Double> spend, Map<Long, Double> income) {
         this.year = year;
         this.month = month;
         this.selectedDay = selectedDay;
         this.spendByDay = spend == null ? new HashMap<Long, Double>() : spend;
+        this.incomeByDay = income == null ? new HashMap<Long, Double>() : income;
         render();
     }
 
@@ -196,7 +199,10 @@ public class SpendCalendarView extends LinearLayout {
                     Double sv = spendByDay.get(dayStart);
                     double spent = sv == null ? 0 : sv;
                     boolean hasSpend = !future && spent > 0;
-                    cell = dayCell(ctx, day, selected, hasSpend, spent, future, dayStart);
+                    Double iv = incomeByDay.get(dayStart);
+                    boolean hasIncome = !future && iv != null && iv > 0;
+                    cell = dayCell(ctx, day, selected, hasSpend, spent,
+                        hasIncome, future, dayStart);
                     day++;
                 }
                 row.addView(cell);
@@ -214,8 +220,8 @@ public class SpendCalendarView extends LinearLayout {
     }
 
     private LinearLayout dayCell(Context ctx, int day, boolean selected,
-                                 boolean hasSpend, double spent, boolean future,
-                                 final long dayStart) {
+                                 boolean hasSpend, double spent, boolean hasIncome,
+                                 boolean future, final long dayStart) {
         LinearLayout cell = new LinearLayout(ctx);
         cell.setOrientation(VERTICAL);
         cell.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -248,8 +254,17 @@ public class SpendCalendarView extends LinearLayout {
             spent > SPEND_ALERT ? R.drawable.dot_over : R.drawable.dot_under);
         dot.setVisibility(hasSpend ? VISIBLE : INVISIBLE);
 
+        View incomeDot = new View(ctx);
+        LinearLayout.LayoutParams idlp = new LinearLayout.LayoutParams(d, d);
+        idlp.topMargin = dp(2);
+        idlp.gravity = Gravity.CENTER_HORIZONTAL;
+        incomeDot.setLayoutParams(idlp);
+        incomeDot.setBackgroundResource(R.drawable.dot_income);
+        incomeDot.setVisibility(hasIncome ? VISIBLE : INVISIBLE);
+
         cell.addView(num);
         cell.addView(dot);
+        cell.addView(incomeDot);
 
         if (!future) {
             cell.setClickable(true);

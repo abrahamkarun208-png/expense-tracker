@@ -65,7 +65,12 @@ public class TxnAdapter extends BaseAdapter {
         String count = h.count == 1 ? "1 transaction" : h.count + " transactions";
         label.setText(h.label + "  \u00B7  " + count);
         TextView total = v.findViewById(R.id.dayTotal);
-        total.setText("\u20B9" + String.format(Locale.US, "%,.0f", h.spent));
+        String t = "\u20B9" + String.format(Locale.US, "%,.0f", h.spent);
+        if (h.income > 0) {
+            t += "  \u00B7  +\u20B9"
+                + String.format(Locale.US, "%,.0f", h.income);
+        }
+        total.setText(t);
         return v;
     }
 
