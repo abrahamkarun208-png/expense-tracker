@@ -704,7 +704,11 @@ public class MainActivity extends Activity {
     /** Tapping a NET-card tile: every account's income and expenses. */
     private void showAccountBreakdown() {
         long[] r = navMonthRange();
-        List<DbHelper.AccountSummary> accounts = db.accountSummaries(r[0], r[1]);
+        List<DbHelper.AccountSummary> banks = new ArrayList<DbHelper.AccountSummary>();
+        List<DbHelper.AccountSummary> cards = new ArrayList<DbHelper.AccountSummary>();
+        for (DbHelper.AccountSummary a : db.accountSummaries(r[0], r[1])) {
+            if (a.isCard) cards.add(a); else banks.add(a);
+        }
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -725,64 +729,15 @@ public class MainActivity extends Activity {
 
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        if (accounts.isEmpty()) {
+        if (banks.isEmpty() && cards.isEmpty()) {
             TextView t = new TextView(this);
             t.setText("No account activity this month.");
             t.setTextSize(13);
             t.setTextColor(getColor(R.color.muted));
             list.addView(t);
-        }
-        for (DbHelper.AccountSummary a : accounts) {
-            String name = (a.bankName == null || a.bankName.isEmpty())
-                ? (a.bankCode == null ? "Unknown" : a.bankCode) : a.bankName;
-            if (a.card4 != null && !a.card4.isEmpty()) {
-                name += " \u00B7\u00B7\u00B7\u00B7 " + a.card4;
-            }
-
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(0, dp(8), 0, dp(8));
-
-            TextView nameView = new TextView(this);
-            nameView.setText(name);
-            nameView.setTextSize(15);
-            nameView.setTypeface(Typeface.DEFAULT_BOLD);
-            nameView.setTextColor(getColor(R.color.ink));
-
-            LinearLayout figures = new LinearLayout(this);
-            figures.setOrientation(LinearLayout.HORIZONTAL);
-            figures.setPadding(0, dp(4), 0, 0);
-
-            TextView inc = new TextView(this);
-            inc.setText("\u2191 \u20B9"
-                + String.format(Locale.US, "%,.0f", a.income));
-            inc.setTextSize(13);
-            inc.setTextColor(getColor(R.color.credit));
-
-            TextView exp = new TextView(this);
-            exp.setText("\u2193 \u20B9"
-                + String.format(Locale.US, "%,.0f", a.expenses));
-            exp.setTextSize(13);
-            exp.setTextColor(getColor(R.color.debit));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(dp(16), 0, dp(16), 0);
-            exp.setLayoutParams(lp);
-
-            TextView net = new TextView(this);
-            double n = a.income - a.expenses;
-            net.setText("Net " + (n < 0 ? "-\u20B9" : "+\u20B9")
-                + String.format(Locale.US, "%,.0f", Math.abs(n)));
-            net.setTextSize(13);
-            net.setTextColor(getColor(R.color.muted));
-
-            figures.addView(inc);
-            figures.addView(exp);
-            figures.addView(net);
-            row.addView(nameView);
-            row.addView(figures);
-            list.addView(row);
+        } else {
+            addAccountSection(list, "Bank accounts", banks, false);
+            addAccountSection(list, "Credit cards", cards, true);
         }
 
         ScrollView sv = new ScrollView(this);
@@ -799,6 +754,80 @@ public class MainActivity extends Activity {
             .setView(root)
             .setPositiveButton("Close", null)
             .show();
+    }
+
+    private void addAccountSection(LinearLayout list, String header,
+                                   List<DbHelper.AccountSummary> accounts,
+                                   boolean isCardSection) {
+        if (accounts.isEmpty()) return;
+        TextView h = new TextView(this);
+        h.setText(header.toUpperCase(Locale.getDefault()));
+        h.setTextSize(12);
+        h.setTypeface(Typeface.DEFAULT_BOLD);
+        h.setTextColor(getColor(R.color.muted));
+        h.setPadding(0, dp(10), 0, dp(2));
+        list.addView(h);
+        for (DbHelper.AccountSummary a : accounts) {
+            list.addView(accountRow(a, isCardSection));
+        }
+    }
+
+    private View accountRow(DbHelper.AccountSummary a, boolean isCard) {
+        String name = (a.bankName == null || a.bankName.isEmpty())
+            ? (a.bankCode == null ? "Unknown" : a.bankCode) : a.bankName;
+        if (a.card4 != null && !a.card4.isEmpty()) {
+            name += " \u00B7\u00B7\u00B7\u00B7 " + a.card4;
+        }
+        if (isCard) name = "\uD83D\uDCB3 " + name; // card symbol
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(8), 0, dp(8));
+
+        TextView nameView = new TextView(this);
+        nameView.setText(name);
+        nameView.setTextSize(15);
+        nameView.setTypeface(Typeface.DEFAULT_BOLD);
+        nameView.setTextColor(getColor(R.color.ink));
+
+        LinearLayout figures = new LinearLayout(this);
+        figures.setOrientation(LinearLayout.HORIZONTAL);
+        figures.setPadding(0, dp(4), 0, 0);
+
+        if (!isCard || a.income > 0) {
+            TextView inc = new TextView(this);
+            inc.setText("\u2191 \u20B9"
+                + String.format(Locale.US, "%,.0f", a.income));
+            inc.setTextSize(13);
+            inc.setTextColor(getColor(R.color.credit));
+            figures.addView(inc);
+        }
+
+        TextView exp = new TextView(this);
+        exp.setText("\u2193 \u20B9"
+            + String.format(Locale.US, "%,.0f", a.expenses));
+        exp.setTextSize(13);
+        exp.setTextColor(getColor(R.color.debit));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(16), 0, dp(16), 0);
+        exp.setLayoutParams(lp);
+        figures.addView(exp);
+
+        if (!isCard) {
+            TextView net = new TextView(this);
+            double n = a.income - a.expenses;
+            net.setText("Net " + (n < 0 ? "-\u20B9" : "+\u20B9")
+                + String.format(Locale.US, "%,.0f", Math.abs(n)));
+            net.setTextSize(13);
+            net.setTextColor(getColor(R.color.muted));
+            figures.addView(net);
+        }
+
+        row.addView(nameView);
+        row.addView(figures);
+        return row;
     }
 
     /** Calendar day tap: where the money went that day, by merchant. */

@@ -170,6 +170,8 @@ public class DbHelper extends SQLiteOpenHelper {
         public String card4;
         public double income;
         public double expenses;
+        /** True when the group is card swipes only (no bank debits/credits). */
+        public boolean isCard;
     }
 
     public List<AccountSummary> accountSummaries(long startTs, long endTs) {
@@ -177,7 +179,9 @@ public class DbHelper extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery(
             "SELECT bankCode, bankName, card4,"
                 + " SUM(CASE WHEN type='CREDIT' THEN amount ELSE 0 END),"
-                + " SUM(CASE WHEN type IN ('DEBIT','CARD_SPEND') THEN amount ELSE 0 END)"
+                + " SUM(CASE WHEN type IN ('DEBIT','CARD_SPEND') THEN amount ELSE 0 END),"
+                + " SUM(CASE WHEN type='CARD_SPEND' THEN 1 ELSE 0 END),"
+                + " SUM(CASE WHEN type IN ('DEBIT','CREDIT') THEN 1 ELSE 0 END)"
                 + " FROM txns WHERE ts>=? AND ts<=?"
                 + " AND type IN ('CREDIT','DEBIT','CARD_SPEND')"
                 + " GROUP BY bankCode, bankName, card4"
@@ -190,6 +194,7 @@ public class DbHelper extends SQLiteOpenHelper {
             a.card4 = c.getString(2);
             a.income = c.getDouble(3);
             a.expenses = c.getDouble(4);
+            a.isCard = c.getInt(5) > 0 && c.getInt(6) == 0;
             out.add(a);
         }
         c.close();
