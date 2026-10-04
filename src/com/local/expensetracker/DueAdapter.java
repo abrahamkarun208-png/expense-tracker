@@ -64,10 +64,10 @@ public class DueAdapter extends BaseAdapter {
 
         TextView dueLine = v.findViewById(R.id.dueLine);
         if ("PAID".equals(d.status)) {
-            dueLine.setText("Paid \u20B9" + money(d.paid));
+            dueLine.setText("Paid " + MoneyFmt.money(d.paid, d.currency));
         } else {
-            dueLine.setText("Due \u20B9" + money(d.totalDue)
-                + "  (min \u20B9" + money(d.minDue) + ")");
+            dueLine.setText("Due " + MoneyFmt.money(d.totalDue, d.currency)
+                + "  (min " + MoneyFmt.money(d.minDue, d.currency) + ")");
         }
 
         TextView dateLine = v.findViewById(R.id.dueDateLine);
@@ -84,7 +84,4 @@ public class DueAdapter extends BaseAdapter {
         return v;
     }
 
-    private static String money(double x) {
-        return String.format(Locale.US, "%,.0f", x);
-    }
 }

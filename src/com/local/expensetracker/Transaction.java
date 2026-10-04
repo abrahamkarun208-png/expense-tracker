@@ -11,4 +11,5 @@ public class Transaction {
     public String merchant;
     public long ts;
     public String card4;
+    public String currency;   // INR, QAR, AUD, USD
 }

@@ -11,4 +11,5 @@ public class CardDue {
     public long dueTs;
     public String status;    // PENDING, PAID, OUTSTANDING
     public double paid;
+    public String currency;  // INR, QAR, AUD, USD
 }

@@ -23,11 +23,14 @@ public class TxnGrouper {
         public final double spent;   // DEBIT + CARD_SPEND total for the day
         public final double income;  // CREDIT total for the day
         public final int count;
-        public DayHeader(String label, double spent, double income, int count) {
+        public final String currency; // dominant currency of the day's txns
+        public DayHeader(String label, double spent, double income, int count,
+                         String currency) {
             this.label = label;
             this.spent = spent;
             this.income = income;
             this.count = count;
+            this.currency = currency;
         }
     }
 
@@ -56,7 +59,8 @@ public class TxnGrouper {
                 }
             }
             out.add(new DayHeader(dayLabel(e.getKey(), today), spent, income,
-                    e.getValue().size()));
+                    e.getValue().size(),
+                    MoneyFmt.dominant(e.getValue())));
             out.addAll(e.getValue());
         }
         return out;

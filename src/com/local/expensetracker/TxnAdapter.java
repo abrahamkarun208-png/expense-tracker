@@ -67,10 +67,9 @@ public class TxnAdapter extends BaseAdapter {
             .toUpperCase(Locale.getDefault());
         label.setText(l);
         TextView total = v.findViewById(R.id.dayTotal);
-        String t = "Exp \u20B9" + String.format(Locale.US, "%,.0f", h.spent);
+        String t = "Exp " + MoneyFmt.money(h.spent, h.currency);
         if (h.income > 0) {
-            t += " \u00B7 Inc \u20B9"
-                + String.format(Locale.US, "%,.0f", h.income);
+            t += " \u00B7 Inc " + MoneyFmt.money(h.income, h.currency);
         }
         total.setText(t);
         return v;
@@ -114,6 +113,13 @@ public class TxnAdapter extends BaseAdapter {
         return v;
     }
 
+    private static String fmt(Transaction t) {
+        String a = MoneyFmt.money(t.amount, t.currency);
+        if ("CREDIT".equals(t.type)) return "+" + a;
+        if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) return "-" + a;
+        return a;
+    }
+
     private static String typeLabel(String type) {
         if ("CARD_SPEND".equals(type)) return "Card debit";
         if ("TRANSFER".equals(type)) return "Transfer";
@@ -121,10 +127,4 @@ public class TxnAdapter extends BaseAdapter {
         return "Debit";
     }
 
-    private static String fmt(Transaction t) {
-        String a = "\u20B9" + String.format(Locale.US, "%,.0f", t.amount);
-        if ("CREDIT".equals(t.type)) return "+" + a;
-        if ("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type)) return "-" + a;
-        return a;
-    }
 }

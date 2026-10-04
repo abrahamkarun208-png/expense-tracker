@@ -408,6 +408,7 @@ public class MainActivity extends Activity {
         double exp = db.sumSpentBetween(r[0], r[1]);
         double inc = db.sumIncomeBetween(r[0], r[1]);
         double net = inc - exp;
+        String ccy = MoneyFmt.dominant(db.getTxnsBetween(r[0], r[1]));
 
         String mName = new SimpleDateFormat("MMMM yyyy",
             Locale.getDefault()).format(new Date(r[0]));
@@ -419,11 +420,10 @@ public class MainActivity extends Activity {
             + new SimpleDateFormat("MMM yyyy", Locale.getDefault())
                 .format(new Date(r[0])).toUpperCase(Locale.getDefault()));
 
-        netAmount.setText((net < 0 ? "-\u20B9" : "+\u20B9")
-            + String.format(Locale.US, "%,.0f", Math.abs(net)));
+        netAmount.setText((net < 0 ? "-" : "+") + MoneyFmt.money(Math.abs(net), ccy));
         netAmount.setTextColor(getColor(net < 0 ? R.color.debit : R.color.credit));
-        incomeTileAmt.setText("\u20B9" + String.format(Locale.US, "%,.0f", inc));
-        expenseTileAmt.setText("\u20B9" + String.format(Locale.US, "%,.0f", exp));
+        incomeTileAmt.setText(MoneyFmt.money(inc, ccy));
+        expenseTileAmt.setText(MoneyFmt.money(exp, ccy));
 
         if (inc > 0) {
             int pct = (int) Math.round(exp / inc * 100);
@@ -437,8 +437,8 @@ public class MainActivity extends Activity {
                     + " \u2014 you kept " + (100 - pct) + "%");
             } else {
                 pctCaption.setText("Expenses were " + pct + "% of income"
-                    + " \u2014 you overspent by \u20B9"
-                    + String.format(Locale.US, "%,.0f", exp - inc));
+                    + " \u2014 you overspent by "
+                    + MoneyFmt.money(exp - inc, ccy));
             }
         } else if (exp > 0) {
             netBarFill.setLayoutParams(new LinearLayout.LayoutParams(0,
@@ -463,10 +463,10 @@ public class MainActivity extends Activity {
                     Locale.getDefault()).format(new Date(first.dueTs));
             }
             duesLine.setVisibility(View.VISIBLE);
-            duesLine.setText("\u20B9"
-                + String.format(Locale.US, "%,.0f", unpaid)
+            duesLine.setText(MoneyFmt.money(unpaid, ccy)
                 + " of your spending is unpaid card dues" + dueDate + "."
-                + " Paying the bill adds \u20B90 to expenses.");
+                + " Paying the bill adds " + MoneyFmt.money(0, ccy)
+                + " to expenses.");
         } else {
             duesLine.setVisibility(View.GONE);
         }
@@ -638,7 +638,8 @@ public class MainActivity extends Activity {
                 PIE_COLORS[PIE_COLORS.length - 1]));
             pieMembers.add(othersMembers);
         }
-        pieChart.setData(pieSlices, total, PieChartView.money(total));
+        String pieCur = MoneyFmt.dominant(txns);
+        pieChart.setData(pieSlices, total, MoneyFmt.money(total, pieCur));
 
         pieLegend.removeAllViews();
         if (pieSlices.isEmpty()) {
@@ -649,7 +650,7 @@ public class MainActivity extends Activity {
             pieLegend.addView(t);
             return;
         }
-        for (int i = 0; i < pieSlices.size(); i++) addLegendRow(i, total);
+        for (int i = 0; i < pieSlices.size(); i++) addLegendRow(i, total, pieCur);
     }
 
     private static double sumOf(List<Transaction> txns) {
@@ -658,7 +659,7 @@ public class MainActivity extends Activity {
         return s;
     }
 
-    private void addLegendRow(final int index, double total) {
+    private void addLegendRow(final int index, double total, final String cur) {
         PieChartView.Slice s = pieSlices.get(index);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -691,7 +692,7 @@ public class MainActivity extends Activity {
 
         TextView amt = new TextView(this);
         int pct = total > 0 ? (int) Math.round(s.value / total * 100) : 0;
-        amt.setText(PieChartView.money(s.value) + " \u00B7 " + pct + "%");
+        amt.setText(MoneyFmt.money(s.value, cur) + " \u00B7 " + pct + "%");
         amt.setTextSize(12);
         amt.setTextColor(getColor(R.color.muted));
 
@@ -796,16 +797,14 @@ public class MainActivity extends Activity {
 
         if (!isCard || a.income > 0) {
             TextView inc = new TextView(this);
-            inc.setText("\u2191 \u20B9"
-                + String.format(Locale.US, "%,.0f", a.income));
+            inc.setText("\u2191 " + MoneyFmt.money(a.income, a.currency));
             inc.setTextSize(13);
             inc.setTextColor(getColor(R.color.credit));
             figures.addView(inc);
         }
 
         TextView exp = new TextView(this);
-        exp.setText("\u2193 \u20B9"
-            + String.format(Locale.US, "%,.0f", a.expenses));
+        exp.setText("\u2193 " + MoneyFmt.money(a.expenses, a.currency));
         exp.setTextSize(13);
         exp.setTextColor(getColor(R.color.debit));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -818,8 +817,8 @@ public class MainActivity extends Activity {
         if (!isCard) {
             TextView net = new TextView(this);
             double n = a.income - a.expenses;
-            net.setText("Net " + (n < 0 ? "-\u20B9" : "+\u20B9")
-                + String.format(Locale.US, "%,.0f", Math.abs(n)));
+            net.setText("Net " + (n < 0 ? "-" : "+")
+                + MoneyFmt.money(Math.abs(n), a.currency));
             net.setTextSize(13);
             net.setTextColor(getColor(R.color.muted));
             figures.addView(net);
@@ -873,7 +872,8 @@ public class MainActivity extends Activity {
         int n = 0;
         for (Map.Entry<String, List<Transaction>> e : entries) n += e.getValue().size();
         TextView sub = new TextView(this);
-        sub.setText(dateStr + " \u00B7 " + PieChartView.money(dayTotal)
+        String dayCur = MoneyFmt.dominant(txns);
+        sub.setText(dateStr + " \u00B7 " + MoneyFmt.money(dayTotal, dayCur)
             + " \u00B7 " + n + (n == 1 ? " transaction" : " transactions"));
         sub.setTextSize(13);
         sub.setTextColor(getColor(R.color.muted));
@@ -919,7 +919,8 @@ public class MainActivity extends Activity {
 
             TextView amt = new TextView(this);
             int pct = dayTotal > 0 ? (int) Math.round(mTotal / dayTotal * 100) : 0;
-            amt.setText(PieChartView.money(mTotal) + " \u00B7 " + pct + "%");
+            amt.setText(MoneyFmt.money(mTotal, MoneyFmt.dominant(e.getValue()))
+                + " \u00B7 " + pct + "%");
             amt.setTextSize(12);
             amt.setTextColor(getColor(R.color.muted));
 
@@ -963,7 +964,8 @@ public class MainActivity extends Activity {
 
         TextView sub = new TextView(this);
         String cnt = members.size() == 1 ? "1 transaction" : members.size() + " transactions";
-        sub.setText(PieChartView.money(total) + " \u00B7 " + cnt + " \u00B7 " + periodName);
+        sub.setText(MoneyFmt.money(total, MoneyFmt.dominant(members))
+            + " \u00B7 " + cnt + " \u00B7 " + periodName);
         sub.setTextSize(13);
         sub.setTextColor(getColor(R.color.muted));
         sub.setPadding(0, dp(4), 0, dp(12));

@@ -15,7 +15,7 @@ import java.util.List;
 public class DbHelper extends SQLiteOpenHelper {
 
     private static final String DB = "expenses.db";
-    private static final int VER = 1;
+    private static final int VER = 2;
 
     public DbHelper(Context c) {
         super(c, DB, null, VER);
@@ -24,14 +24,21 @@ public class DbHelper extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE txns(_key TEXT PRIMARY KEY, bankCode TEXT, bankName TEXT,"
-            + " amount REAL, type TEXT, merchant TEXT, ts INTEGER, card4 TEXT)");
+            + " amount REAL, type TEXT, merchant TEXT, ts INTEGER, card4 TEXT,"
+            + " currency TEXT NOT NULL DEFAULT 'INR')");
         db.execSQL("CREATE INDEX idx_txns_ts ON txns(ts)");
         db.execSQL("CREATE TABLE dues(cardKey TEXT PRIMARY KEY, bankName TEXT, card4 TEXT,"
-            + " totalDue REAL, minDue REAL, dueTs INTEGER, status TEXT, paid REAL)");
+            + " totalDue REAL, minDue REAL, dueTs INTEGER, status TEXT, paid REAL,"
+            + " currency TEXT NOT NULL DEFAULT 'INR')");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldV, int newV) {
+        // v2: per-transaction currency for Qatar/Australia support.
+        if (oldV < 2) {
+            db.execSQL("ALTER TABLE txns ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'");
+            db.execSQL("ALTER TABLE dues ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'");
+        }
     }
 
     public boolean txnExists(String key) {
@@ -86,6 +93,7 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("merchant", t.merchant);
         v.put("ts", t.ts);
         v.put("card4", t.card4);
+        v.put("currency", t.currency == null ? "INR" : t.currency);
         getWritableDatabase().insertWithOnConflict("txns", null, v,
             SQLiteDatabase.CONFLICT_IGNORE);
     }
@@ -93,7 +101,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<Transaction> getTxnsSince(long cutoffTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4 FROM txns"
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency FROM txns"
                 + " WHERE ts>=? ORDER BY ts DESC",
             new String[]{String.valueOf(cutoffTs)});
         while (c.moveToNext()) {
@@ -106,6 +114,7 @@ public class DbHelper extends SQLiteOpenHelper {
             t.merchant = c.getString(5);
             t.ts = c.getLong(6);
             t.card4 = c.getString(7);
+            t.currency = c.getString(8);
             out.add(t);
         }
         c.close();
@@ -168,6 +177,7 @@ public class DbHelper extends SQLiteOpenHelper {
         public String bankCode;
         public String bankName;
         public String card4;
+        public String currency;
         public double income;
         public double expenses;
         /** True when the group is card swipes only (no bank debits/credits). */
@@ -177,24 +187,25 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<AccountSummary> accountSummaries(long startTs, long endTs) {
         List<AccountSummary> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT bankCode, bankName, card4,"
+            "SELECT bankCode, bankName, card4, currency,"
                 + " SUM(CASE WHEN type='CREDIT' THEN amount ELSE 0 END),"
                 + " SUM(CASE WHEN type IN ('DEBIT','CARD_SPEND') THEN amount ELSE 0 END),"
                 + " SUM(CASE WHEN type='CARD_SPEND' THEN 1 ELSE 0 END),"
                 + " SUM(CASE WHEN type IN ('DEBIT','CREDIT') THEN 1 ELSE 0 END)"
                 + " FROM txns WHERE ts>=? AND ts<=?"
                 + " AND type IN ('CREDIT','DEBIT','CARD_SPEND')"
-                + " GROUP BY bankCode, bankName, card4"
-                + " ORDER BY 5 DESC",
+                + " GROUP BY bankCode, bankName, card4, currency"
+                + " ORDER BY 6 DESC",
             new String[]{String.valueOf(startTs), String.valueOf(endTs)});
         while (c.moveToNext()) {
             AccountSummary a = new AccountSummary();
             a.bankCode = c.getString(0);
             a.bankName = c.getString(1);
             a.card4 = c.getString(2);
-            a.income = c.getDouble(3);
-            a.expenses = c.getDouble(4);
-            a.isCard = c.getInt(5) > 0 && c.getInt(6) == 0;
+            a.currency = c.getString(3);
+            a.income = c.getDouble(4);
+            a.expenses = c.getDouble(5);
+            a.isCard = c.getInt(6) > 0 && c.getInt(7) == 0;
             out.add(a);
         }
         c.close();
@@ -204,7 +215,7 @@ public class DbHelper extends SQLiteOpenHelper {
     /** The earliest unpaid due, for the "due <date>" callout. May be null. */
     public CardDue earliestUnpaidDue() {
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid FROM dues"
+            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid,currency FROM dues"
                 + " WHERE status IN ('PENDING','OUTSTANDING')"
                 + " ORDER BY dueTs ASC LIMIT 1", null);
         CardDue d = null;
@@ -218,6 +229,7 @@ public class DbHelper extends SQLiteOpenHelper {
             d.dueTs = c.getLong(5);
             d.status = c.getString(6);
             d.paid = c.getDouble(7);
+            d.currency = c.getString(8);
         }
         c.close();
         return d;
@@ -242,7 +254,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<Transaction> getTxnsBetween(long startTs, long endTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4 FROM txns"
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency FROM txns"
                 + " WHERE ts>=? AND ts<=? ORDER BY ts DESC",
             new String[]{String.valueOf(startTs), String.valueOf(endTs)});
         while (c.moveToNext()) {
@@ -255,6 +267,7 @@ public class DbHelper extends SQLiteOpenHelper {
             t.merchant = c.getString(5);
             t.ts = c.getLong(6);
             t.card4 = c.getString(7);
+            t.currency = c.getString(8);
             out.add(t);
         }
         c.close();
@@ -271,6 +284,7 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("dueTs", d.dueTs);
         v.put("status", "PENDING");
         v.put("paid", 0);
+        v.put("currency", d.currency == null ? "INR" : d.currency);
         getWritableDatabase().insertWithOnConflict("dues", null, v,
             SQLiteDatabase.CONFLICT_REPLACE);
     }
@@ -303,7 +317,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<CardDue> getDues() {
         List<CardDue> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid FROM dues"
+            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid,currency FROM dues"
                 + " ORDER BY dueTs ASC", null);
         while (c.moveToNext()) {
             CardDue d = new CardDue();
@@ -315,6 +329,7 @@ public class DbHelper extends SQLiteOpenHelper {
             d.dueTs = c.getLong(5);
             d.status = c.getString(6);
             d.paid = c.getDouble(7);
+            d.currency = c.getString(8);
             out.add(d);
         }
         c.close();

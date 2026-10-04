@@ -18,6 +18,7 @@ public class Importer {
             d.totalDue = r.totalDue;
             d.minDue = r.minDue;
             d.dueTs = r.dueTs;
+            d.currency = r.currency;
             db.upsertDue(d);
             return;
         }
@@ -37,6 +38,7 @@ public class Importer {
             t.merchant = r.merchant == null ? "" : r.merchant;
             t.ts = smsTs;
             t.card4 = r.card4;
+            t.currency = r.currency == null ? "INR" : r.currency;
             if (db.hasNearDuplicate(t.bankCode, t.amount, t.type, t.merchant, t.ts)) return;
             db.insertTxn(t);
         }

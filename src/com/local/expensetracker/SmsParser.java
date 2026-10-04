@@ -26,6 +26,7 @@ public class SmsParser {
         public String merchant = "";
         public String card4 = "";
         public String cardKey = "";
+        public String currency = "INR";   // INR, QAR, AUD, USD (from the amount token)
         public double totalDue;
         public double minDue;
         public long dueTs;
@@ -77,12 +78,35 @@ public class SmsParser {
         {"KVB", "Karur Vysya Bank", "KVBANK", "KVBUPI"},
         {"CSB", "CSB Bank", "CSFBNK"},
         {"AIRTELPB", "Airtel Payments Bank", "AIRBNK"},
+        // Qatar (sender IDs inferred from research 2026-10-05; formats unverified)
+        {"QNB", "QNB Group", "QNB", "QNBALERT", "QNB-ALERT"},
+        {"CBQ", "Commercial Bank", "CBQ", "CBQAT", "CB-ALERT"},
+        {"DOHABANK", "Doha Bank", "DOHABANK", "DOHA-BANK", "DOBANK", "DBANK"},
+        {"ALRAYAN", "AlRayan Bank", "ALRAYAN", "RAYANBANK"},
+        {"QIB", "Qatar Islamic Bank", "QIB", "QIB-ALERT"},
+        {"DUKHAN", "Dukhan Bank", "DUKHAN", "DUKHANBANK", "BARWA"},
+        {"AHLIBANK", "Ahli Bank", "AHLIBANK", "AHLI"},
+        {"QIIB", "Qatar International Islamic Bank", "QIIB"},
+        {"MASHREQ", "Mashreq", "MASHREQ"},
+        // Australia: banks mostly use app push, not SMS; ING (verified sender)
+        // offers opt-in per-transaction SMS. Others are low-confidence.
+        {"INGAU", "ING Australia", "ING", "INGOTP"},
+        {"COMMBANK", "Commonwealth Bank", "COMMBANK"},
+        {"WESTPAC", "Westpac", "WESTPAC"},
+        {"ANZ", "ANZ", "ANZ"},
+        {"NAB", "NAB", "NAB"},
+        {"MACQUARIE", "Macquarie Bank", "MACQUARIE"},
+        {"BENDIGO", "Bendigo Bank", "BENDIGO"},
+        {"SUNCORP", "Suncorp Bank", "SUNCORP"},
+        {"BOQ", "Bank of Queensland", "BOQ"},
+        {"UBANK", "UBank", "UBANK"},
     };
 
+    // Group 1 = currency token (rs/inr/usd/qar/qr/aud/INR-symbol/$), group 2 = number.
     private static final Pattern AMOUNT =
-        Pattern.compile("(?i)(?:rs\\.?|inr|usd|\\u20B9)\\s*:?\\s*([0-9,]+(?:\\.[0-9]{1,2})?|\\.[0-9]{1,2})");
+        Pattern.compile("(?i)(rs\\.?|inr|usd|qar|qr|aud|\\u20B9|\\$)\\s*:?\\s*([0-9,]+(?:\\.[0-9]{1,2})?|\\.[0-9]{1,2})");
     private static final Pattern CARD4 =
-        Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?|card\\w*\\s+x)\\s*(\\d{4})");
+        Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|\\*+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?|card\\s*\\*+|card\\w*\\s+x)\\s*(\\d{4})");
     private static final Pattern MERCHANT_KW =
         Pattern.compile("(?i)\\b(at|to|towards|from)\\b");
     // "Dr."/"Cr." abbreviations (BOB, Canara, AU use these instead of debited/credited).
@@ -104,6 +128,9 @@ public class SmsParser {
 
         String[] bank = detectBank(addr, body);
         if (bank == null) return null;
+        // "PayID" never sends SMS (verified, AU research) - anything claiming
+        // to be from PayID is a scam marker, never a transaction.
+        if (addr.contains("PAYID")) return null;
 
         Result r = new Result();
         r.bankCode = bank[0];
@@ -114,14 +141,17 @@ public class SmsParser {
         // 1) Card statement: "Total Amt Due ... Min Amt Due ... due by <date>"
         if (low.contains("total") && low.contains("due")
                 && (low.contains("statement") || low.contains("min"))) {
+            String stmtCur = extractCurrency(body,
+                "(?i)total\\s+(?:amt\\.?|amount)?\\s*due\\s*:?\\s*(rs\\.?|inr|usd|qar|qr|aud|\\u20B9|\\$)?\\s*([0-9,]+(?:\\.[0-9]{1,2})?)");
             double total = extract(body,
-                "(?i)total\\s+(?:amt\\.?|amount)?\\s*due\\s*:?\\s*(?:rs\\.?|inr|\\u20B9)?\\s*([0-9,]+(?:\\.[0-9]{1,2})?)");
+                "(?i)total\\s+(?:amt\\.?|amount)?\\s*due\\s*:?\\s*(?:rs\\.?|inr|usd|qar|qr|aud|\\u20B9|\\$)?\\s*([0-9,]+(?:\\.[0-9]{1,2})?)");
             double min = extract(body,
-                "(?i)min(?:imum)?\\s+(?:amt\\.?|amount)?\\s*due\\s*:?\\s*(?:rs\\.?|inr|\\u20B9)?\\s*([0-9,]+(?:\\.[0-9]{1,2})?)");
+                "(?i)min(?:imum)?\\s+(?:amt\\.?|amount)?\\s*due\\s*:?\\s*(?:rs\\.?|inr|usd|qar|qr|aud|\\u20B9|\\$)?\\s*([0-9,]+(?:\\.[0-9]{1,2})?)");
             if (total > 0) {
                 r.isStatement = true;
                 r.totalDue = total;
                 r.minDue = min;
+                r.currency = stmtCur;
                 r.card4 = extractCard4(body);
                 r.cardKey = r.bankCode + "|" + (r.card4.isEmpty() ? "CARD" : r.card4);
                 r.dueTs = extractDueDate(body, smsTs);
@@ -136,6 +166,7 @@ public class SmsParser {
             if (firstAmt > 0) {
                 r.isPayment = true;
                 r.amount = firstAmt;
+                r.currency = firstCurrency(body);
                 r.card4 = extractCard4(body);
                 r.cardKey = r.bankCode + "|" + (r.card4.isEmpty() ? "CARD" : r.card4);
                 return r;
@@ -155,6 +186,7 @@ public class SmsParser {
 
         r.isTxn = true;
         r.amount = firstAmt;
+        r.currency = firstCurrency(body);
         r.type = type;
         r.merchant = extractMerchant(body);
         if (r.merchant.isEmpty() && "TRANSFER".equals(type)) r.merchant = "Own account";
@@ -178,14 +210,36 @@ public class SmsParser {
 
     private static double firstAmount(String body) {
         Matcher m = AMOUNT.matcher(body);
-        if (m.find()) return parseNum(m.group(1));
+        if (m.find()) return parseNum(m.group(2));
         return 0;
+    }
+
+    /** Currency code (INR/QAR/AUD/USD) from the first amount token. */
+    private static String firstCurrency(String body) {
+        Matcher m = AMOUNT.matcher(body);
+        if (m.find()) return currencyOf(m.group(1));
+        return "INR";
+    }
+
+    private static String currencyOf(String token) {
+        String t = token.toLowerCase(Locale.US);
+        if (t.startsWith("qar") || t.equals("qr")) return "QAR";
+        if (t.equals("aud") || t.equals("$")) return "AUD";
+        if (t.equals("usd")) return "USD";
+        return "INR";
     }
 
     private static double extract(String body, String regex) {
         Matcher m = Pattern.compile(regex).matcher(body);
         if (m.find()) return parseNum(m.group(1));
         return 0;
+    }
+
+    /** Currency from a two-group (currency, number) amount regex; INR default. */
+    private static String extractCurrency(String body, String regex) {
+        Matcher m = Pattern.compile(regex).matcher(body);
+        if (m.find() && m.group(1) != null) return currencyOf(m.group(1));
+        return "INR";
     }
 
     private static double parseNum(String s) {
@@ -209,7 +263,9 @@ public class SmsParser {
 
     private static String classify(String low, String body, String addr) {
         boolean cardCtx = low.contains("credit card") || low.contains("debit card")
-            || !extractCard4(body).isEmpty();
+            || !extractCard4(body).isEmpty()
+            || (low.contains("card") && (low.contains("spent") || low.contains("purchase")
+                || low.contains("swipe")));
         boolean upiCtx = low.contains("upi");
         boolean strongDebit = low.contains("debit") || low.contains("spent") || low.contains("purchase")
             || low.contains("paid") || low.contains("withdrawn") || low.contains("charged")
@@ -256,6 +312,11 @@ public class SmsParser {
         if (upiCtx && (low.contains("transaction of") || low.contains("payment of"))
                 && (low.contains("successful") || low.contains("success"))
                 && !creditW) return "DEBIT";
+        // Gulf style: "Successful transaction of QAR 250.00 @ MERCHANT"
+        // (a purchase; credit wordings always name credited/received instead).
+        if (low.contains("successful transaction") && !creditW) {
+            return cardCtx ? "CARD_SPEND" : "DEBIT";
+        }
         if (debitW) return "DEBIT";
         if (creditW) return "CREDIT";
         return null;
@@ -295,6 +356,17 @@ public class SmsParser {
         if ((low.contains("insufficient") || low.contains("failed") || low.contains("declined")
                     || low.contains("unsuccessful"))
                 && !low.contains("refund") && !low.contains("revers")) {
+            return true;
+        }
+        // Australia-style non-transaction alerts (also match Indian OTP SMS):
+        // one-time codes, fraud yes/no checks, paused-payment verifications,
+        // card-status notices.
+        if (low.contains("otp") || low.contains("one-time") || low.contains("passcode")
+                || low.contains("security code") || low.contains("verification code")
+                || low.contains("do not reply") || low.contains("reply yes")
+                || low.contains("yes/no") || low.contains("paused")
+                || low.contains("verify your") || low.contains("was this you")
+                || low.contains("card has been mailed") || low.contains("card is on its way")) {
             return true;
         }
         return false;
@@ -416,7 +488,7 @@ public class SmsParser {
     public static List<Double> allAmounts(String body) {
         List<Double> out = new ArrayList<>();
         Matcher m = AMOUNT.matcher(body);
-        while (m.find()) out.add(parseNum(m.group(1)));
+        while (m.find()) out.add(parseNum(m.group(2)));
         return out;
     }
 }
