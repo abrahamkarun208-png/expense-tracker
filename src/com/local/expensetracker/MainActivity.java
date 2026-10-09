@@ -452,9 +452,12 @@ public class MainActivity extends Activity {
     }
 
     private void updateNameRow() {
-        String saved = getPreferences(MODE_PRIVATE).getString("user_name", "");
-        userNameRow.setText(saved.isEmpty() ? "Set your name"
-            : "Your name: " + saved);
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        String saved = prefs.getString("user_name", "");
+        String alias = prefs.getString("user_name_alias", "");
+        if (saved.isEmpty()) userNameRow.setText("Set your name");
+        else if (alias.isEmpty()) userNameRow.setText("Your name: " + saved);
+        else userNameRow.setText("Your name: " + saved + " (aka " + alias + ")");
     }
 
     /** Name dialog: used for the one-time prompt and for later updates. */
@@ -464,28 +467,41 @@ public class MainActivity extends Activity {
         input.setHint("Your full name");
         input.setText(prefs.getString("user_name", ""));
         input.setSingleLine(true);
+        final EditText aliasInput = new EditText(this);
+        aliasInput.setHint("Alias / pet name (optional)");
+        aliasInput.setText(prefs.getString("user_name_alias", ""));
+        aliasInput.setSingleLine(true);
         int pad = dp(20);
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(LinearLayout.VERTICAL);
         wrap.setPadding(pad, dp(8), pad, 0);
         TextView hint = new TextView(this);
         hint.setText("Used only on this phone to spot transfers between your"
-            + " own accounts, so they don't inflate your income.");
+            + " own accounts, so they don't inflate your income. Add your"
+            + " pet name too if some accounts use it.");
         hint.setTextSize(13);
         hint.setTextColor(getColor(R.color.muted));
         hint.setPadding(0, 0, 0, dp(8));
         wrap.addView(hint);
         wrap.addView(input);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        aliasInput.setLayoutParams(lp);
+        wrap.addView(aliasInput);
         new AlertDialog.Builder(this)
             .setTitle("What's your name?")
             .setView(wrap)
             .setPositiveButton("Save", new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface d, int which) {
                     String name = input.getText().toString().trim();
-                    prefs.edit().putString("user_name", name).apply();
-                    SmsParser.setUserName(name);
+                    String alias = aliasInput.getText().toString().trim();
+                    prefs.edit().putString("user_name", name)
+                        .putString("user_name_alias", alias).apply();
+                    SmsParser.setUserNames(name, alias);
                     updateNameRow();
-                    int fixed = db.reclassifySelfTransfers(name);
+                    int fixed = db.reclassifySelfTransfers(name, alias);
                     refreshUi();
                     Toast.makeText(MainActivity.this,
                         name.isEmpty() ? "Name cleared"

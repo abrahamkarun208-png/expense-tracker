@@ -109,14 +109,27 @@ public class SmsParser {
         Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|\\*+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?|card\\s*\\*+|card\\w*\\s+x)\\s*(\\d{4})");
     private static final Pattern MERCHANT_KW =
         Pattern.compile("(?i)\\b(at|to|towards|from)\\b");
-    /** The phone owner's name, set at app start. Used to spot transfers
-     *  between the user's own accounts so they are not counted as income. */
-    private static String userName = "";
+    /** The phone owner's names (full name + optional alias/pet name), set at
+     *  app start. Used to spot transfers between the user's own accounts so
+     *  they are not counted as income. */
+    private static final java.util.List<String> userNames =
+        new java.util.ArrayList<String>();
 
     /** Set once at process start (Application.onCreate) and when the user
-     *  updates their name. Purely local; never leaves the phone. */
+     *  updates their names. Purely local; never leaves the phone. */
+    public static void setUserNames(String... names) {
+        userNames.clear();
+        if (names != null) {
+            for (String n : names) {
+                String t = n == null ? "" : n.trim();
+                if (!t.isEmpty() && !userNames.contains(t)) userNames.add(t);
+            }
+        }
+    }
+
+    /** Backwards-compatible single-name setter. */
     public static void setUserName(String n) {
-        userName = n == null ? "" : n.trim();
+        setUserNames(n);
     }
 
     /** Lowercase, single spaces, for name comparison. */
@@ -129,16 +142,20 @@ public class SmsParser {
         "(?i)(?:from|to|towards|sender|remitter|beneficiary|paid\\s+to|"
         + "transferred\\s+to|received\\s+from)\\s+([A-Za-z][A-Za-z .]{1,38})");
 
-    /** True when the message's counterparty is the phone owner's own name,
-     *  i.e. a transfer between their own accounts. Conservative: requires the
-     *  full name (case-insensitive), so "salary from ACME CORP" never matches. */
+    /** True when the message's counterparty is one of the phone owner's own
+     *  names, i.e. a transfer between their own accounts. Conservative:
+     *  requires the full name (case-insensitive), so "salary from ACME CORP"
+     *  never matches. */
     private static boolean isSelfTransfer(String body) {
-        String un = normName(userName);
-        if (un.length() < 3) return false;
+        if (userNames.isEmpty()) return false;
         Matcher m = COUNTERPARTY.matcher(body);
         while (m.find()) {
             String cp = normName(m.group(1));
-            if (cp.equals(un) || cp.contains(un)) return true;
+            for (String u : userNames) {
+                String un = normName(u);
+                if (un.length() < 3) continue;
+                if (cp.equals(un) || cp.contains(un)) return true;
+            }
         }
         return false;
     }

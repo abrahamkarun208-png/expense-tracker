@@ -12,8 +12,9 @@ public class App extends Application {
     public void onCreate() {
         super.onCreate();
         // Same file Activity.getPreferences() uses (local class name).
-        String name = getSharedPreferences("MainActivity", MODE_PRIVATE)
-            .getString("user_name", "");
-        SmsParser.setUserName(name);
+        android.content.SharedPreferences p =
+            getSharedPreferences("MainActivity", MODE_PRIVATE);
+        SmsParser.setUserNames(p.getString("user_name", ""),
+            p.getString("user_name_alias", ""));
     }
 }

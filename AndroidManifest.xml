@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.local.expensetracker"
-    android:versionCode="24"
-    android:versionName="1.24">
+    android:versionCode="25"
+    android:versionName="1.25">
 
     <!-- SMS: core function (read bank SMS on-device). -->
     <uses-permission android:name="android.permission.READ_SMS" />

@@ -275,18 +275,28 @@ public class DbHelper extends SQLiteOpenHelper {
     }
 
     /** Reclassify past self-transfer legs as TRANSFER once the user sets
-     *  their name (the merchant field holds the counterparty name).
+     *  their names (the merchant field holds the counterparty name).
      *  Returns the number of rows fixed. */
-    public int reclassifySelfTransfers(String name) {
-        String n = name == null ? ""
-            : name.toLowerCase(java.util.Locale.US).trim().replaceAll("\\s+", " ");
-        if (n.length() < 3) return 0;
+    public int reclassifySelfTransfers(String... names) {
+        java.util.List<String> ns = new java.util.ArrayList<String>();
+        if (names != null) {
+            for (String name : names) {
+                String n = name == null ? "" : name.toLowerCase(
+                    java.util.Locale.US).trim().replaceAll("\\s+", " ");
+                if (n.length() >= 3 && !ns.contains(n)) ns.add(n);
+            }
+        }
+        if (ns.isEmpty()) return 0;
+        StringBuilder like = new StringBuilder();
+        for (int i = 0; i < ns.size(); i++) {
+            if (i > 0) like.append(" OR ");
+            like.append("lower(merchant) LIKE '%' || ? || '%'");
+        }
         SQLiteDatabase db = getWritableDatabase();
         db.execSQL("UPDATE txns SET type='TRANSFER'"
             + " WHERE type IN ('CREDIT','DEBIT')"
-            + " AND merchant IS NOT NULL"
-            + " AND lower(merchant) LIKE '%' || ? || '%'",
-            new Object[]{n});
+            + " AND merchant IS NOT NULL AND (" + like + ")",
+            ns.toArray(new Object[0]));
         android.database.Cursor c = db.rawQuery("SELECT changes()", null);
         int count = 0;
         if (c.moveToFirst()) count = c.getInt(0);
