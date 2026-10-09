@@ -49,6 +49,37 @@ public class DbHelper extends SQLiteOpenHelper {
         return exists;
     }
 
+    /** On rescan, update an already-imported row when the current parser
+     *  classifies it differently (newer versions read direction better,
+     *  e.g. NEFT completion advices once read as income). TRANSFER rows are
+     *  never downgraded - they were deliberately excluded by name match or
+     *  pair-matching. Also fills in account digits the old parser missed. */
+    public void reclassifyIfChanged(String key, String newType, String newCard4) {
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor c = db.rawQuery("SELECT type, card4 FROM txns WHERE _key=?",
+            new String[]{key});
+        if (!c.moveToFirst()) { c.close(); return; }
+        String oldType = c.getString(0);
+        String oldCard4 = c.getString(1);
+        c.close();
+        boolean typeChange = !newType.equals(oldType)
+            && !"TRANSFER".equals(oldType)
+            && ("CREDIT".equals(oldType) || "DEBIT".equals(oldType));
+        boolean cardChange = newCard4 != null && !newCard4.isEmpty()
+            && (oldCard4 == null || oldCard4.isEmpty());
+        if (!typeChange && !cardChange) return;
+        if (typeChange && cardChange) {
+            db.execSQL("UPDATE txns SET type=?, card4=? WHERE _key=?",
+                new Object[]{newType, newCard4, key});
+        } else if (typeChange) {
+            db.execSQL("UPDATE txns SET type=? WHERE _key=?",
+                new Object[]{newType, key});
+        } else {
+            db.execSQL("UPDATE txns SET card4=? WHERE _key=?",
+                new Object[]{newCard4, key});
+        }
+    }
+
     /** Fill in missing card4/account digits on an already-imported row
      *  (newer parser versions extract digits older ones missed). */
     public void backfillCard4(String bankCode, double amount, String type,

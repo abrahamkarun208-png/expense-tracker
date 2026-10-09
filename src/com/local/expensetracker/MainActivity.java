@@ -694,6 +694,9 @@ public class MainActivity extends Activity {
                         }
                     }
                     db.refreshOverdue(System.currentTimeMillis());
+                    // After a full rescan, pair up transfer legs: reclassified
+                    // rows (above) may now match their other half.
+                    if (full) db.repairTransferPairs();
                 } catch (SecurityException e) {
                     // permission revoked mid-import
                 } finally {

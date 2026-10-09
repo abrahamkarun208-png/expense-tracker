@@ -28,7 +28,13 @@ public class Importer {
         }
         if (r.isTxn) {
             String key = "sms|" + address + "|" + smsTs + "|" + body.hashCode();
-            if (db.txnExists(key)) return;
+            if (db.txnExists(key)) {
+                // Seen before: re-read with the current parser so newer
+                // versions fix old misclassifications (never downgrades
+                // a TRANSFER), then skip.
+                db.reclassifyIfChanged(key, r.type, r.card4);
+                return;
+            }
             Transaction t = new Transaction();
             t.key = key;
             t.bankCode = r.bankCode;
