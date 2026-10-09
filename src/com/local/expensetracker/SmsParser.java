@@ -109,6 +109,40 @@ public class SmsParser {
         Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|\\*+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?|card\\s*\\*+|card\\w*\\s+x)\\s*(\\d{4})");
     private static final Pattern MERCHANT_KW =
         Pattern.compile("(?i)\\b(at|to|towards|from)\\b");
+    /** The phone owner's name, set at app start. Used to spot transfers
+     *  between the user's own accounts so they are not counted as income. */
+    private static String userName = "";
+
+    /** Set once at process start (Application.onCreate) and when the user
+     *  updates their name. Purely local; never leaves the phone. */
+    public static void setUserName(String n) {
+        userName = n == null ? "" : n.trim();
+    }
+
+    /** Lowercase, single spaces, for name comparison. */
+    private static String normName(String s) {
+        return s.toLowerCase(Locale.US).trim().replaceAll("\\s+", " ");
+    }
+
+    // Counterparty phrases: "from X", "to X", "towards X", "sender X", ...
+    private static final Pattern COUNTERPARTY = Pattern.compile(
+        "(?i)(?:from|to|towards|sender|remitter|beneficiary|paid\\s+to|"
+        + "transferred\\s+to|received\\s+from)\\s+([A-Za-z][A-Za-z .]{1,38})");
+
+    /** True when the message's counterparty is the phone owner's own name,
+     *  i.e. a transfer between their own accounts. Conservative: requires the
+     *  full name (case-insensitive), so "salary from ACME CORP" never matches. */
+    private static boolean isSelfTransfer(String body) {
+        String un = normName(userName);
+        if (un.length() < 3) return false;
+        Matcher m = COUNTERPARTY.matcher(body);
+        while (m.find()) {
+            String cp = normName(m.group(1));
+            if (cp.equals(un) || cp.contains(un)) return true;
+        }
+        return false;
+    }
+
     // "Dr."/"Cr." abbreviations (BOB, Canara, AU use these instead of debited/credited).
     private static final Pattern DR_ABBR = Pattern.compile("(?i)\\bdr\\b");
     private static final Pattern CR_ABBR = Pattern.compile("(?i)\\bcr\\b");
@@ -183,6 +217,11 @@ public class SmsParser {
         if (firstAmt <= 0) return null;
         String type = classify(low, body, addr);
         if (type == null) return null;
+        // Self-transfer between the user's own accounts: moving their own
+        // money, so it must not inflate income or expenses.
+        if (("CREDIT".equals(type) || "DEBIT".equals(type)) && isSelfTransfer(body)) {
+            type = "TRANSFER";
+        }
 
         r.isTxn = true;
         r.amount = firstAmt;

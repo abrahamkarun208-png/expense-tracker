@@ -517,5 +517,16 @@
             android:textColor="@color/primary"
             android:padding="8dp"
             android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/userNameRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Set your name"
+            android:textSize="11sp"
+            android:textColor="@color/primary"
+            android:padding="8dp"
+            android:layout_marginBottom="4dp" />
     </LinearLayout>
 </ScrollView>

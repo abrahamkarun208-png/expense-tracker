@@ -7,6 +7,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -20,6 +21,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -63,6 +65,7 @@ public class MainActivity extends Activity {
     // Month navigator (drives NET card, Month tab and Calendar)
     private TextView monthTitle;
     private View monthNav;
+    private TextView userNameRow;
     private int navYear;
     private int navMonth;
     // Period tabs
@@ -117,6 +120,11 @@ public class MainActivity extends Activity {
         duesLine = findViewById(R.id.duesLine);
         monthTitle = findViewById(R.id.monthTitle);
         monthNav = findViewById(R.id.monthNav);
+        userNameRow = findViewById(R.id.userNameRow);
+        userNameRow.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showNameDialog(); }
+        });
+        updateNameRow();
         tabDay = findViewById(R.id.tabDay);
         tabWeek = findViewById(R.id.tabWeek);
         tabMonth = findViewById(R.id.tabMonth);
@@ -178,6 +186,7 @@ public class MainActivity extends Activity {
             }
         });
         updateChecker.checkIfDue();
+        maybePromptForName();
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -422,6 +431,73 @@ public class MainActivity extends Activity {
         } else {
             return new long[]{calDayMs, calDayMs + DAY_MS - 1};
         }
+    }
+
+    /** One-time name prompt: shown once per app version until the user saves
+     *  a name, so installs and updates each get one ask. The name lets the
+     *  parser spot transfers between the user's own accounts. */
+    private void maybePromptForName() {
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        String saved = prefs.getString("user_name", "");
+        if (!saved.isEmpty()) return;
+        String vn;
+        try {
+            vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            vn = "";
+        }
+        if (vn.equals(prefs.getString("name_prompt_vn", ""))) return;
+        prefs.edit().putString("name_prompt_vn", vn).apply();
+        showNameDialog();
+    }
+
+    private void updateNameRow() {
+        String saved = getPreferences(MODE_PRIVATE).getString("user_name", "");
+        userNameRow.setText(saved.isEmpty() ? "Set your name"
+            : "Your name: " + saved);
+    }
+
+    /** Name dialog: used for the one-time prompt and for later updates. */
+    private void showNameDialog() {
+        final SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        final EditText input = new EditText(this);
+        input.setHint("Your full name");
+        input.setText(prefs.getString("user_name", ""));
+        input.setSingleLine(true);
+        int pad = dp(20);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(pad, dp(8), pad, 0);
+        TextView hint = new TextView(this);
+        hint.setText("Used only on this phone to spot transfers between your"
+            + " own accounts, so they don't inflate your income.");
+        hint.setTextSize(13);
+        hint.setTextColor(getColor(R.color.muted));
+        hint.setPadding(0, 0, 0, dp(8));
+        wrap.addView(hint);
+        wrap.addView(input);
+        new AlertDialog.Builder(this)
+            .setTitle("What's your name?")
+            .setView(wrap)
+            .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int which) {
+                    String name = input.getText().toString().trim();
+                    prefs.edit().putString("user_name", name).apply();
+                    SmsParser.setUserName(name);
+                    updateNameRow();
+                    int fixed = db.reclassifySelfTransfers(name);
+                    refreshUi();
+                    Toast.makeText(MainActivity.this,
+                        name.isEmpty() ? "Name cleared"
+                            : fixed > 0 ? "Name saved \u2014 " + fixed
+                                + " past transfer" + (fixed == 1 ? "" : "s")
+                                + " fixed"
+                            : "Name saved",
+                        Toast.LENGTH_LONG).show();
+                }
+            })
+            .setNegativeButton("Skip", null)
+            .show();
     }
 
     private void refreshNetCard() {

@@ -274,6 +274,26 @@ public class DbHelper extends SQLiteOpenHelper {
         return out;
     }
 
+    /** Reclassify past self-transfer legs as TRANSFER once the user sets
+     *  their name (the merchant field holds the counterparty name).
+     *  Returns the number of rows fixed. */
+    public int reclassifySelfTransfers(String name) {
+        String n = name == null ? ""
+            : name.toLowerCase(java.util.Locale.US).trim().replaceAll("\\s+", " ");
+        if (n.length() < 3) return 0;
+        SQLiteDatabase db = getWritableDatabase();
+        db.execSQL("UPDATE txns SET type='TRANSFER'"
+            + " WHERE type IN ('CREDIT','DEBIT')"
+            + " AND merchant IS NOT NULL"
+            + " AND lower(merchant) LIKE '%' || ? || '%'",
+            new Object[]{n});
+        android.database.Cursor c = db.rawQuery("SELECT changes()", null);
+        int count = 0;
+        if (c.moveToFirst()) count = c.getInt(0);
+        c.close();
+        return count;
+    }
+
     public void upsertDue(CardDue d) {
         ContentValues v = new ContentValues();
         v.put("cardKey", d.cardKey);
