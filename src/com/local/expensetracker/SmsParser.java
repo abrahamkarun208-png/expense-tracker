@@ -109,6 +109,12 @@ public class SmsParser {
         Pattern.compile("(?i)(?:ending|ends?\\s+with|xx+|\\*+|x{4,}|card\\s*no\\.?\\s*(?:ending\\s*)?|card\\s*\\*+|card\\w*\\s+x)\\s*(\\d{4})");
     private static final Pattern MERCHANT_KW =
         Pattern.compile("(?i)\\b(at|to|towards|from)\\b");
+    /** NEFT/IMPS completion advice: "NEFT money transfer ... has been credited
+     *  to BENEFICIARY" is sent to the *sender* when their transfer completes,
+     *  so money left the user's account (the word "credited" refers to the
+     *  beneficiary's account, not the user's). */
+    private static final Pattern NEFT_ADVICE =
+        Pattern.compile("(?is)(neft|imps)\\s+(money\\s+)?transfer.{0,80}?has been credited to");
     /** The phone owner's names (full name + optional alias/pet name), set at
      *  app start. Used to spot transfers between the user's own accounts so
      *  they are not counted as income. */
@@ -369,6 +375,18 @@ public class SmsParser {
 
         if (cardCtx && debitW) return "CARD_SPEND";
         if (transferW && (debitW || low.contains("transfer"))) return "TRANSFER";
+        // NEFT/IMPS completion advice: "NEFT money transfer ... has been
+        // credited to BENEFICIARY" goes to the sender, so money left the
+        // user's account -> DEBIT. (A genuine incoming NEFT reads "credited
+        // to your a/c" and stays CREDIT.) parse() upgrades to TRANSFER when
+        // the beneficiary is the user's own name.
+        Matcher neftAdvice = NEFT_ADVICE.matcher(low);
+        if (neftAdvice.find()) {
+            String after = low.substring(neftAdvice.end());
+            boolean toOwn = after.contains("your a/c")
+                || after.contains("your account");
+            return toOwn ? "CREDIT" : "DEBIT";
+        }
         // "transferred from X ..." - money left the FROM account, so it is a
         // debit-direction movement. Incoming only when the destination is the
         // user's own account ("to your a/c"); parse() upgrades to TRANSFER
