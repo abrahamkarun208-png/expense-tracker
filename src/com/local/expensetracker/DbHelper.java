@@ -185,6 +185,36 @@ public class DbHelper extends SQLiteOpenHelper {
         return s;
     }
 
+    /** Income (CREDIT) transactions in a range, newest first. */
+    public static class IncomeTxn {
+        public String merchant;
+        public String bankName;
+        public String card4;
+        public String currency;
+        public double amount;
+        public long ts;
+    }
+
+    public List<IncomeTxn> incomeTxns(long startTs, long endTs) {
+        List<IncomeTxn> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT merchant, bankName, card4, currency, amount, ts FROM txns"
+            + " WHERE type='CREDIT' AND ts>=? AND ts<=? ORDER BY ts DESC",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        while (c.moveToNext()) {
+            IncomeTxn t = new IncomeTxn();
+            t.merchant = c.getString(0);
+            t.bankName = c.getString(1);
+            t.card4 = c.getString(2);
+            t.currency = c.getString(3);
+            t.amount = c.getDouble(4);
+            t.ts = c.getLong(5);
+            out.add(t);
+        }
+        c.close();
+        return out;
+    }
+
     /** Per-account income/expenses for a range, one row per bank + last-4. */
     public static class AccountSummary {
         public String bankCode;

@@ -217,12 +217,14 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { shiftMonth(1); }
         });
 
-        // Tapping either tile shows every account's income and expenses.
-        View.OnClickListener tileClick = new View.OnClickListener() {
+        // INCOME tile: the income transactions themselves.
+        // EXPENSES tile: per-account income/expense breakdown.
+        findViewById(R.id.tileIncome).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showIncomeBreakdown(); }
+        });
+        findViewById(R.id.tileExpense).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { showAccountBreakdown(); }
-        };
-        findViewById(R.id.tileIncome).setOnClickListener(tileClick);
-        findViewById(R.id.tileExpense).setOnClickListener(tileClick);
+        });
 
         permButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { askPermission(); }
@@ -849,6 +851,107 @@ public class MainActivity extends Activity {
         row.addView(name);
         row.addView(amt);
         pieLegend.addView(row);
+    }
+
+    /** Tapping the INCOME tile: every income transaction (money received
+     *  from others) in the selected period, newest first. */
+    private void showIncomeBreakdown() {
+        long[] r = currentRange();
+        List<DbHelper.IncomeTxn> txns = db.incomeTxns(r[0], r[1]);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText("Income");
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(getColor(R.color.ink));
+
+        TextView sub = new TextView(this);
+        String subText;
+        if (period == 0) subText = "Today";
+        else if (period == 1) subText = "This week";
+        else if (period == 3) subText = new SimpleDateFormat("d MMM yyyy",
+            Locale.getDefault()).format(new Date(r[0]));
+        else subText = monthTitle.getText().toString();
+        sub.setText(subText);
+        sub.setTextSize(13);
+        sub.setTextColor(getColor(R.color.muted));
+        sub.setPadding(0, dp(4), 0, dp(12));
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        SimpleDateFormat df = new SimpleDateFormat("d MMM", Locale.getDefault());
+        if (txns.isEmpty()) {
+            TextView t = new TextView(this);
+            t.setText("No income in this period.");
+            t.setTextSize(13);
+            t.setTextColor(getColor(R.color.muted));
+            list.addView(t);
+        } else {
+            double total = 0;
+            String cur = "INR";
+            for (DbHelper.IncomeTxn t : txns) {
+                total += t.amount;
+                cur = t.currency;
+
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setPadding(0, dp(8), 0, dp(8));
+
+                LinearLayout left = new LinearLayout(this);
+                left.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                left.setLayoutParams(leftLp);
+
+                TextView m = new TextView(this);
+                String merch = t.merchant == null || t.merchant.isEmpty()
+                    ? t.bankName : t.merchant;
+                m.setText(merch);
+                m.setTextSize(14);
+                m.setTypeface(Typeface.DEFAULT_BOLD);
+                m.setTextColor(getColor(R.color.ink));
+                left.addView(m);
+
+                TextView d = new TextView(this);
+                String acct = (t.card4 == null || t.card4.isEmpty())
+                    ? t.bankName
+                    : t.bankName + " \u2022\u2022\u2022\u2022 " + t.card4;
+                d.setText(acct + " \u00b7 " + df.format(new Date(t.ts)));
+                d.setTextSize(12);
+                d.setTextColor(getColor(R.color.muted));
+                left.addView(d);
+                row.addView(left);
+
+                TextView amt = new TextView(this);
+                amt.setText(MoneyFmt.money(t.amount, t.currency));
+                amt.setTextSize(14);
+                amt.setTypeface(Typeface.DEFAULT_BOLD);
+                amt.setTextColor(getColor(R.color.credit));
+                row.addView(amt);
+                list.addView(row);
+            }
+            title.setText("Income \u00b7 " + MoneyFmt.money(total, cur));
+        }
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(list, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(380)));
+
+        root.addView(title);
+        root.addView(sub);
+        root.addView(sv);
+
+        new AlertDialog.Builder(this)
+            .setView(root)
+            .setPositiveButton("Close", null)
+            .show();
     }
 
     /** Tapping a NET-card tile: every account's income and expenses. */
