@@ -62,6 +62,7 @@ public class MainActivity extends Activity {
     private TextView duesLine;
     // Month navigator (drives NET card, Month tab and Calendar)
     private TextView monthTitle;
+    private View monthNav;
     private int navYear;
     private int navMonth;
     // Period tabs
@@ -115,6 +116,7 @@ public class MainActivity extends Activity {
         pctCaption = findViewById(R.id.pctCaption);
         duesLine = findViewById(R.id.duesLine);
         monthTitle = findViewById(R.id.monthTitle);
+        monthNav = findViewById(R.id.monthNav);
         tabDay = findViewById(R.id.tabDay);
         tabWeek = findViewById(R.id.tabWeek);
         tabMonth = findViewById(R.id.tabMonth);
@@ -146,8 +148,11 @@ public class MainActivity extends Activity {
             @Override public void onSliceClick(int index) {
                 if (index >= 0 && index < pieSlices.size()
                         && index < pieMembers.size()) {
+                    String where = period == 0 ? "today"
+                        : period == 1 ? "this week"
+                        : monthTitle.getText().toString();
                     showMerchantDetail(pieSlices.get(index), pieMembers.get(index),
-                        period == 1 ? "this week" : monthTitle.getText().toString());
+                        where);
                 }
             }
         });
@@ -403,22 +408,55 @@ public class MainActivity extends Activity {
      * The NET hero card: this navigated month's Income, Expenses, Net and
      * expenses-as-%-of-income, matching the approved mockup.
      */
+    /** [start, end] for the dashboard and the list, following the selected tab:
+     *  Day = today, Week = Sunday-now, Month = navigated month, Calendar = day. */
+    private long[] currentRange() {
+        long now = System.currentTimeMillis();
+        if (period == 0) {
+            long s = TxnGrouper.dayStart(now);
+            return new long[]{s, now};
+        } else if (period == 1) {
+            return new long[]{TxnGrouper.weekStart(now), now};
+        } else if (period == 2) {
+            return navMonthRange();
+        } else {
+            return new long[]{calDayMs, calDayMs + DAY_MS - 1};
+        }
+    }
+
     private void refreshNetCard() {
-        long[] r = navMonthRange();
+        long[] r = currentRange();
         double exp = db.sumSpentBetween(r[0], r[1]);
         double inc = db.sumIncomeBetween(r[0], r[1]);
         double net = inc - exp;
         String ccy = MoneyFmt.dominant(db.getTxnsBetween(r[0], r[1]));
 
-        String mName = new SimpleDateFormat("MMMM yyyy",
-            Locale.getDefault()).format(new Date(r[0]));
-        monthTitle.setText(mName);
-        Calendar now = Calendar.getInstance();
-        boolean cur = navYear == now.get(Calendar.YEAR)
-            && navMonth == now.get(Calendar.MONTH);
-        netLabel.setText(cur ? "NET THIS MONTH" : "NET \u00B7 "
-            + new SimpleDateFormat("MMM yyyy", Locale.getDefault())
-                .format(new Date(r[0])).toUpperCase(Locale.getDefault()));
+        // The month navigator only belongs to the Month tab.
+        monthNav.setVisibility(period == 2 ? View.VISIBLE : View.GONE);
+        String periodWord;
+        if (period == 0) {
+            periodWord = "today";
+            netLabel.setText("NET TODAY");
+        } else if (period == 1) {
+            periodWord = "this week";
+            netLabel.setText("NET THIS WEEK");
+        } else if (period == 3) {
+            periodWord = "that day";
+            netLabel.setText("NET \u00B7 " + new SimpleDateFormat("d MMM",
+                Locale.getDefault()).format(new Date(r[0]))
+                .toUpperCase(Locale.getDefault()));
+        } else {
+            periodWord = "this month";
+            String mName = new SimpleDateFormat("MMMM yyyy",
+                Locale.getDefault()).format(new Date(r[0]));
+            monthTitle.setText(mName);
+            Calendar now = Calendar.getInstance();
+            boolean cur = navYear == now.get(Calendar.YEAR)
+                && navMonth == now.get(Calendar.MONTH);
+            netLabel.setText(cur ? "NET THIS MONTH" : "NET \u00B7 "
+                + new SimpleDateFormat("MMM yyyy", Locale.getDefault())
+                    .format(new Date(r[0])).toUpperCase(Locale.getDefault()));
+        }
 
         netAmount.setText((net < 0 ? "-" : "+") + MoneyFmt.money(Math.abs(net), ccy));
         netAmount.setTextColor(getColor(net < 0 ? R.color.debit : R.color.credit));
@@ -445,17 +483,18 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 100));
             netBarRest.setLayoutParams(new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 1));
-            pctCaption.setText("No income recorded this month");
+            pctCaption.setText("No income recorded " + periodWord);
         } else {
             netBarFill.setLayoutParams(new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 1));
             netBarRest.setLayoutParams(new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 100));
-            pctCaption.setText("No activity this month");
+            pctCaption.setText("No activity " + periodWord);
         }
 
+        // Card dues are a monthly concept; keep them on the Month dashboard.
         double unpaid = db.unpaidDuesTotal();
-        if (unpaid > 0) {
+        if (unpaid > 0 && period == 2) {
             CardDue first = db.earliestUnpaidDue();
             String dueDate = "";
             if (first != null && first.dueTs > 0) {
@@ -555,25 +594,9 @@ public class MainActivity extends Activity {
 
     private void refreshUi() {
         refreshNetCard();
-        long now = System.currentTimeMillis();
-        long start, end;
-        if (period == 0) {
-            start = TxnGrouper.dayStart(now);
-            end = now;
-        } else if (period == 1) {
-            // Calendar week: Sunday to Saturday.
-            start = TxnGrouper.weekStart(now);
-            end = now;
-        } else if (period == 2) {
-            // The navigated calendar month, from the 1st.
-            long[] r = navMonthRange();
-            start = r[0];
-            end = r[1];
-        } else {
-            syncCalendar();
-            start = calDayMs;
-            end = calDayMs + DAY_MS - 1;
-        }
+        long[] rr = currentRange();
+        long start = rr[0], end = rr[1];
+        if (period == 3) syncCalendar();
         calCard.setVisibility(period == 3 ? View.VISIBLE : View.GONE);
 
         List<Transaction> txns = db.getTxnsBetween(start, end);
@@ -704,7 +727,7 @@ public class MainActivity extends Activity {
 
     /** Tapping a NET-card tile: every account's income and expenses. */
     private void showAccountBreakdown() {
-        long[] r = navMonthRange();
+        long[] r = currentRange();
         List<DbHelper.AccountSummary> banks = new ArrayList<DbHelper.AccountSummary>();
         List<DbHelper.AccountSummary> cards = new ArrayList<DbHelper.AccountSummary>();
         for (DbHelper.AccountSummary a : db.accountSummaries(r[0], r[1])) {
@@ -723,7 +746,13 @@ public class MainActivity extends Activity {
         title.setTextColor(getColor(R.color.ink));
 
         TextView sub = new TextView(this);
-        sub.setText(monthTitle.getText().toString());
+        String subText;
+        if (period == 0) subText = "Today";
+        else if (period == 1) subText = "This week";
+        else if (period == 3) subText = new SimpleDateFormat("d MMM yyyy",
+            Locale.getDefault()).format(new Date(r[0]));
+        else subText = monthTitle.getText().toString();
+        sub.setText(subText);
         sub.setTextSize(13);
         sub.setTextColor(getColor(R.color.muted));
         sub.setPadding(0, dp(4), 0, dp(12));

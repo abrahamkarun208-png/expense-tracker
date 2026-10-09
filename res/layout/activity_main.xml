@@ -18,8 +18,9 @@
             android:textStyle="bold"
             android:textColor="@color/ink" />
 
-        <!-- Month navigator: drives the NET card, Month tab and Calendar -->
+        <!-- Month navigator: shown on the Month tab only; drives the NET card there -->
         <LinearLayout
+            android:id="@+id/monthNav"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
