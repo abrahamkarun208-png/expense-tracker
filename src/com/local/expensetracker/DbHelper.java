@@ -310,6 +310,42 @@ public class DbHelper extends SQLiteOpenHelper {
             new Object[]{key});
     }
 
+    /** "My accounts" registry, set by the UI from SharedPreferences.
+     *  Unconfigured (null) means every account counts as the user's own,
+     *  preserving the behaviour from before the registry existed. */
+    private java.util.Set<String> myAccounts = null;
+    private boolean myAccountsConfigured = false;
+
+    public void setMyAccounts(java.util.Set<String> accts, boolean configured) {
+        myAccounts = accts;
+        myAccountsConfigured = configured;
+    }
+
+    public static String acctKey(String bankCode, String card4) {
+        return (bankCode == null ? "" : bankCode) + "|"
+            + (card4 == null ? "" : card4);
+    }
+
+    public boolean isMyAccount(String bankCode, String card4) {
+        if (!myAccountsConfigured) return true;
+        return myAccounts != null
+            && myAccounts.contains(acctKey(bankCode, card4));
+    }
+
+    /** Distinct bank accounts seen in SMS (bankCode, bankName, card4),
+     *  excluding credit-card spend entries. The user ticks which are theirs. */
+    public java.util.List<String[]> discoverAccounts() {
+        java.util.List<String[]> out = new java.util.ArrayList<String[]>();
+        android.database.Cursor c = getReadableDatabase().rawQuery(
+            "SELECT DISTINCT bankCode, bankName, card4 FROM txns"
+            + " WHERE type != 'CARD_SPEND' ORDER BY bankName, card4", null);
+        while (c.moveToNext()) {
+            out.add(new String[]{c.getString(0), c.getString(1), c.getString(2)});
+        }
+        c.close();
+        return out;
+    }
+
     /**
      * Find a same-day, same-amount transfer pair candidate. A CREDIT pairs
      * against a DEBIT/TRANSFER leg and vice versa, from a different account.
@@ -321,11 +357,12 @@ public class DbHelper extends SQLiteOpenHelper {
     public String findPairCandidate(double amount, long ts, String bankCode,
             String card4, boolean wantCredit, java.util.Set<String> excludeKeys) {
         if (amount < 1000) return null;
+        if (!isMyAccount(bankCode, card4)) return null;
         long dayStart = TxnGrouper.dayStart(ts);
         long dayEnd = dayStart + 86400000L;
         String wantTypes = wantCredit ? "'CREDIT'" : "'DEBIT','TRANSFER'";
         android.database.Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key FROM txns"
+            "SELECT _key, bankCode, card4 FROM txns"
             + " WHERE ABS(amount - ?) < 0.01"
             + " AND ts >= ? AND ts < ?"
             + " AND type IN (" + wantTypes + ")"
@@ -338,6 +375,7 @@ public class DbHelper extends SQLiteOpenHelper {
         while (c.moveToNext()) {
             String k = c.getString(0);
             if (excludeKeys != null && excludeKeys.contains(k)) continue;
+            if (!isMyAccount(c.getString(1), c.getString(2))) continue;
             found = k;
             break;
         }
@@ -361,6 +399,7 @@ public class DbHelper extends SQLiteOpenHelper {
         c.close();
         for (String[] r : rows) {
             if (used.contains(r[0])) continue;
+            if (!isMyAccount(r[3], r[4])) continue;
             String pair = findPairCandidate(Double.parseDouble(r[1]),
                 Long.parseLong(r[2]), r[3], r[4], false, used);
             if (pair != null) {

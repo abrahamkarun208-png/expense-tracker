@@ -352,6 +352,21 @@ public class SmsParser {
 
         if (cardCtx && debitW) return "CARD_SPEND";
         if (transferW && (debitW || low.contains("transfer"))) return "TRANSFER";
+        // "transferred from X ..." - money left the FROM account, so it is a
+        // debit-direction movement. Incoming only when the destination is the
+        // user's own account ("to your a/c"); parse() upgrades to TRANSFER
+        // when the counterparty is the user's own name.
+        int tf = low.indexOf("transferred from");
+        if (tf < 0) tf = low.indexOf("transfer from");
+        if (tf >= 0) {
+            String after = low.substring(tf + (low.startsWith("transferred from", tf)
+                ? "transferred from".length() : "transfer from".length()));
+            boolean toOwn = after.contains("to your a/c")
+                || after.contains("to your account");
+            boolean fromOwn = after.matches("(?s)^\\s*your\\s+a/?c.*");
+            if (toOwn && !fromOwn) return "CREDIT";
+            return "DEBIT";
+        }
         String t = low.trim();
         // "Sent Rs...", "Money Sent: Rs...", "Txn Rs..." debit shapes.
         if ((t.startsWith("sent ") || t.startsWith("txn ") || low.contains("money sent"))

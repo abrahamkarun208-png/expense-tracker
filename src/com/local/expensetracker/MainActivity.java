@@ -105,6 +105,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         db = new DbHelper(this);
+        loadMyAccounts();
 
         txnContainer = findViewById(R.id.txnContainer);
         dueContainer = findViewById(R.id.dueContainer);
@@ -906,7 +907,89 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setView(root)
+            .setNeutralButton("My accounts", new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int which) {
+                    showMyAccountsDialog();
+                }
+            })
             .setPositiveButton("Close", null)
+            .show();
+    }
+
+    /** Load the user-confirmed "my accounts" registry into the DB helper. */
+    private void loadMyAccounts() {
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        java.util.Set<String> raw = prefs.getStringSet("my_accounts", null);
+        java.util.Set<String> accts = raw == null ? null
+            : new java.util.HashSet<String>(raw);
+        db.setMyAccounts(accts,
+            prefs.getBoolean("my_accounts_configured", false));
+    }
+
+    /** "My accounts" picker: the app lists every bank account it has seen in
+     *  SMS (masked last-4); the user ticks the ones that are theirs, checked
+     *  against their bank statements. Transfers are only auto-detected
+     *  between these accounts. Everything stays on the phone. */
+    private void showMyAccountsDialog() {
+        final java.util.List<String[]> found = db.discoverAccounts();
+        if (found.isEmpty()) {
+            Toast.makeText(this, "No accounts seen in SMS yet",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String[] labels = new String[found.size()];
+        final boolean[] checked = new boolean[found.size()];
+        for (int i = 0; i < found.size(); i++) {
+            String[] a = found.get(i);
+            String last4 = a[2] == null ? "" : a[2];
+            labels[i] = last4.isEmpty() ? a[1] : a[1] + " \u2022\u2022\u2022\u2022 " + last4;
+            checked[i] = db.isMyAccount(a[0], a[2]);
+        }
+        TextView hint = new TextView(this);
+        hint.setText("Tick the accounts that are yours (check against your"
+            + " bank statements). Transfers between these are kept out of"
+            + " income and expenses.");
+        hint.setTextSize(13);
+        hint.setTextColor(getColor(R.color.muted));
+        int pad = dp(20);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(pad, dp(8), pad, 0);
+        wrap.addView(hint);
+        new AlertDialog.Builder(this)
+            .setTitle("My accounts")
+            .setView(wrap)
+            .setMultiChoiceItems(labels, checked,
+                new DialogInterface.OnMultiChoiceClickListener() {
+                    @Override public void onClick(DialogInterface d, int which,
+                            boolean isChecked) {
+                        checked[which] = isChecked;
+                    }
+                })
+            .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int which) {
+                    java.util.Set<String> set = new java.util.HashSet<String>();
+                    for (int i = 0; i < found.size(); i++) {
+                        if (checked[i]) {
+                            set.add(DbHelper.acctKey(found.get(i)[0],
+                                found.get(i)[2]));
+                        }
+                    }
+                    getPreferences(MODE_PRIVATE).edit()
+                        .putStringSet("my_accounts", set)
+                        .putBoolean("my_accounts_configured", true)
+                        .apply();
+                    db.setMyAccounts(new java.util.HashSet<String>(set), true);
+                    int fixed = db.repairTransferPairs();
+                    refreshUi();
+                    Toast.makeText(MainActivity.this,
+                        fixed > 0 ? "Saved \u2014 " + fixed + " transfer"
+                            + (fixed == 1 ? "" : "s") + " fixed"
+                            : "Saved",
+                        Toast.LENGTH_LONG).show();
+                }
+            })
+            .setNegativeButton("Cancel", null)
             .show();
     }
 
