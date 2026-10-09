@@ -21,6 +21,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -937,60 +938,84 @@ public class MainActivity extends Activity {
                 Toast.LENGTH_SHORT).show();
             return;
         }
-        final String[] labels = new String[found.size()];
-        final boolean[] checked = new boolean[found.size()];
-        for (int i = 0; i < found.size(); i++) {
-            String[] a = found.get(i);
-            String last4 = a[2] == null ? "" : a[2];
-            labels[i] = last4.isEmpty() ? a[1] : a[1] + " \u2022\u2022\u2022\u2022 " + last4;
-            checked[i] = db.isMyAccount(a[0], a[2]);
-        }
+        int pad = dp(20);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(pad, dp(8), pad, 0);
+
         TextView hint = new TextView(this);
         hint.setText("Tick the accounts that are yours (check against your"
             + " bank statements). Transfers between these are kept out of"
             + " income and expenses.");
         hint.setTextSize(13);
         hint.setTextColor(getColor(R.color.muted));
-        int pad = dp(20);
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setOrientation(LinearLayout.VERTICAL);
-        wrap.setPadding(pad, dp(8), pad, 0);
+        hint.setPadding(0, 0, 0, dp(8));
         wrap.addView(hint);
-        new AlertDialog.Builder(this)
+
+        LinearLayout boxList = new LinearLayout(this);
+        boxList.setOrientation(LinearLayout.VERTICAL);
+        final java.util.List<CheckBox> boxes = new java.util.ArrayList<CheckBox>();
+        for (String[] a : found) {
+            String last4 = a[2] == null ? "" : a[2];
+            CheckBox cb = new CheckBox(this);
+            cb.setText(last4.isEmpty()
+                ? a[1] + " (number not in SMS)"
+                : a[1] + " \u2022\u2022\u2022\u2022 " + last4);
+            cb.setChecked(db.isMyAccount(a[0], a[2]));
+            cb.setTextColor(getColor(R.color.ink));
+            boxList.addView(cb);
+            boxes.add(cb);
+        }
+        ScrollView sv = new ScrollView(this);
+        sv.addView(boxList);
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(280));
+        svLp.bottomMargin = dp(8);
+        wrap.addView(sv, svLp);
+
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.END);
+        Button cancelBtn = new Button(this);
+        cancelBtn.setText("Cancel");
+        Button saveBtn = new Button(this);
+        saveBtn.setText("Save");
+        btnRow.addView(cancelBtn);
+        btnRow.addView(saveBtn);
+        wrap.addView(btnRow);
+
+        final AlertDialog dlg = new AlertDialog.Builder(this)
             .setTitle("My accounts")
             .setView(wrap)
-            .setMultiChoiceItems(labels, checked,
-                new DialogInterface.OnMultiChoiceClickListener() {
-                    @Override public void onClick(DialogInterface d, int which,
-                            boolean isChecked) {
-                        checked[which] = isChecked;
+            .create();
+        cancelBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dlg.dismiss(); }
+        });
+        saveBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                java.util.Set<String> set = new java.util.HashSet<String>();
+                for (int i = 0; i < found.size(); i++) {
+                    if (boxes.get(i).isChecked()) {
+                        set.add(DbHelper.acctKey(found.get(i)[0],
+                            found.get(i)[2]));
                     }
-                })
-            .setPositiveButton("Save", new DialogInterface.OnClickListener() {
-                @Override public void onClick(DialogInterface d, int which) {
-                    java.util.Set<String> set = new java.util.HashSet<String>();
-                    for (int i = 0; i < found.size(); i++) {
-                        if (checked[i]) {
-                            set.add(DbHelper.acctKey(found.get(i)[0],
-                                found.get(i)[2]));
-                        }
-                    }
-                    getPreferences(MODE_PRIVATE).edit()
-                        .putStringSet("my_accounts", set)
-                        .putBoolean("my_accounts_configured", true)
-                        .apply();
-                    db.setMyAccounts(new java.util.HashSet<String>(set), true);
-                    int fixed = db.repairTransferPairs();
-                    refreshUi();
-                    Toast.makeText(MainActivity.this,
-                        fixed > 0 ? "Saved \u2014 " + fixed + " transfer"
-                            + (fixed == 1 ? "" : "s") + " fixed"
-                            : "Saved",
-                        Toast.LENGTH_LONG).show();
                 }
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+                getPreferences(MODE_PRIVATE).edit()
+                    .putStringSet("my_accounts", set)
+                    .putBoolean("my_accounts_configured", true)
+                    .apply();
+                db.setMyAccounts(new java.util.HashSet<String>(set), true);
+                dlg.dismiss();
+                int fixed = db.repairTransferPairs();
+                refreshUi();
+                Toast.makeText(MainActivity.this,
+                    fixed > 0 ? "Saved \u2014 " + fixed + " transfer"
+                        + (fixed == 1 ? "" : "s") + " fixed"
+                        : "Saved",
+                    Toast.LENGTH_LONG).show();
+            }
+        });
+        dlg.show();
     }
 
     private void addAccountSection(LinearLayout list, String header,

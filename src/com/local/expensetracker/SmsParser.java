@@ -247,6 +247,7 @@ public class SmsParser {
         r.merchant = extractMerchant(body);
         if (r.merchant.isEmpty() && "TRANSFER".equals(type)) r.merchant = "Own account";
         r.card4 = extractCard4(body);
+        if (r.card4.isEmpty()) r.card4 = extractAcct4(body);
         return r;
     }
 
@@ -314,6 +315,22 @@ public class SmsParser {
             " ");
         Matcher m = CARD4.matcher(b);
         if (m.find()) return m.group(1);
+        return "";
+    }
+
+    /** Last-4 of a bank *account* number ("A/c XX1234", "a/c XXXXXXXX597129").
+     *  Separate from extractCard4, which deliberately ignores account numbers
+     *  so card-spend detection isn't polluted. Used for account grouping and
+     *  the "My accounts" list. */
+    private static final Pattern ACCT4 =
+        Pattern.compile("(?i)\\ba\\s*/?\\s*c(?:count)?\\.?\\s*(?:no\\.?\\s*)?[*x]*\\s*(\\d{4,})");
+
+    private static String extractAcct4(String body) {
+        Matcher m = ACCT4.matcher(body);
+        if (m.find()) {
+            String d = m.group(1);
+            return d.substring(d.length() - 4);
+        }
         return "";
     }
 

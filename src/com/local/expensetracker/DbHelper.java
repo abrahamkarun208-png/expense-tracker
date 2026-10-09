@@ -49,6 +49,19 @@ public class DbHelper extends SQLiteOpenHelper {
         return exists;
     }
 
+    /** Fill in missing card4/account digits on an already-imported row
+     *  (newer parser versions extract digits older ones missed). */
+    public void backfillCard4(String bankCode, double amount, String type,
+                              String merchant, long ts, String card4) {
+        if (card4 == null || card4.isEmpty()) return;
+        getWritableDatabase().execSQL(
+            "UPDATE txns SET card4=? WHERE bankCode=? AND ABS(amount-?)<0.005"
+            + " AND type=? AND COALESCE(merchant,'')=?"
+            + " AND ABS(ts-?)<=60000 AND (card4 IS NULL OR card4='')",
+            new Object[]{card4, bankCode, amount, type,
+                merchant == null ? "" : merchant, ts});
+    }
+
     /**
      * Near-duplicate check: same SMS can arrive with a slightly different
      * timestamp (live receiver vs inbox scan, multipart parts, OEM dup rows).

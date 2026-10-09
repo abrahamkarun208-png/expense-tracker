@@ -50,7 +50,13 @@ public class Importer {
                     db.markTransfer(pair);
                 }
             }
-            if (db.hasNearDuplicate(t.bankCode, t.amount, t.type, t.merchant, t.ts)) return;
+            if (db.hasNearDuplicate(t.bankCode, t.amount, t.type, t.merchant, t.ts)) {
+                // Already imported by an older version: fill in account digits
+                // the old parser missed, then skip.
+                db.backfillCard4(t.bankCode, t.amount, t.type, t.merchant, t.ts,
+                    t.card4);
+                return;
+            }
             db.insertTxn(t);
         }
     }
