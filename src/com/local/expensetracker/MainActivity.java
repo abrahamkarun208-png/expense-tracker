@@ -187,6 +187,7 @@ public class MainActivity extends Activity {
         });
         updateChecker.checkIfDue();
         maybePromptForName();
+        maybeRepairPairs();
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -433,6 +434,36 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** One-time-per-version repair: pair nameless self-transfer legs already
+     *  in the DB (some banks omit the sender name). Runs off the UI thread. */
+    private void maybeRepairPairs() {
+        final SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        String vn;
+        try {
+            vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            vn = "";
+        }
+        if (vn.equals(prefs.getString("pair_repair_vn", ""))) return;
+        prefs.edit().putString("pair_repair_vn", vn).apply();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final int fixed = db.repairTransferPairs();
+                if (fixed > 0) {
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            refreshUi();
+                            Toast.makeText(MainActivity.this,
+                                fixed + " transfer" + (fixed == 1 ? "" : "s")
+                                + " fixed \u2014 no longer counted as income",
+                                Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
     /** One-time name prompt: shown once per app version until the user saves
      *  a name, so installs and updates each get one ask. The name lets the
      *  parser spot transfers between the user's own accounts. */
@@ -502,6 +533,7 @@ public class MainActivity extends Activity {
                     SmsParser.setUserNames(name, alias);
                     updateNameRow();
                     int fixed = db.reclassifySelfTransfers(name, alias);
+                    fixed += db.repairTransferPairs();
                     refreshUi();
                     Toast.makeText(MainActivity.this,
                         name.isEmpty() ? "Name cleared"

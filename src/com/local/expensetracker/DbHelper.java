@@ -304,6 +304,79 @@ public class DbHelper extends SQLiteOpenHelper {
         return count;
     }
 
+    /** Mark one transaction as TRANSFER (used by transfer pair-matching). */
+    public void markTransfer(String key) {
+        getWritableDatabase().execSQL("UPDATE txns SET type='TRANSFER' WHERE _key=?",
+            new Object[]{key});
+    }
+
+    /**
+     * Find a same-day, same-amount transfer pair candidate. A CREDIT pairs
+     * against a DEBIT/TRANSFER leg and vice versa, from a different account.
+     * Needed because some banks omit the sender name entirely
+     * ("Rs. 18,000 credited to your ESAF a/c ..."), so amount+day is the
+     * only signal. Conservative: exact amount, same calendar day, different
+     * account, Rs. 1,000 floor. Returns the candidate's _key, or null.
+     */
+    public String findPairCandidate(double amount, long ts, String bankCode,
+            String card4, boolean wantCredit, java.util.Set<String> excludeKeys) {
+        if (amount < 1000) return null;
+        long dayStart = TxnGrouper.dayStart(ts);
+        long dayEnd = dayStart + 86400000L;
+        String wantTypes = wantCredit ? "'CREDIT'" : "'DEBIT','TRANSFER'";
+        android.database.Cursor c = getReadableDatabase().rawQuery(
+            "SELECT _key FROM txns"
+            + " WHERE ABS(amount - ?) < 0.01"
+            + " AND ts >= ? AND ts < ?"
+            + " AND type IN (" + wantTypes + ")"
+            + " AND NOT (bankCode = ? AND IFNULL(card4,'') = IFNULL(?,''))"
+            + " ORDER BY ABS(ts - ?) LIMIT 10",
+            new String[]{String.valueOf(amount), String.valueOf(dayStart),
+                String.valueOf(dayEnd), bankCode == null ? "" : bankCode,
+                card4 == null ? "" : card4, String.valueOf(ts)});
+        String found = null;
+        while (c.moveToNext()) {
+            String k = c.getString(0);
+            if (excludeKeys != null && excludeKeys.contains(k)) continue;
+            found = k;
+            break;
+        }
+        c.close();
+        return found;
+    }
+
+    /** Repair pass over existing data: pair nameless self-transfer legs
+     *  already in the DB. Idempotent. Returns the number of credits fixed. */
+    public int repairTransferPairs() {
+        int fixed = 0;
+        java.util.Set<String> used = new java.util.HashSet<String>();
+        android.database.Cursor c = getReadableDatabase().rawQuery(
+            "SELECT _key, amount, ts, bankCode, card4 FROM txns"
+            + " WHERE type='CREDIT' AND amount >= 1000 ORDER BY ts", null);
+        java.util.List<String[]> rows = new java.util.ArrayList<String[]>();
+        while (c.moveToNext()) {
+            rows.add(new String[]{c.getString(0), String.valueOf(c.getDouble(1)),
+                String.valueOf(c.getLong(2)), c.getString(3), c.getString(4)});
+        }
+        c.close();
+        for (String[] r : rows) {
+            if (used.contains(r[0])) continue;
+            String pair = findPairCandidate(Double.parseDouble(r[1]),
+                Long.parseLong(r[2]), r[3], r[4], false, used);
+            if (pair != null) {
+                SQLiteDatabase wdb = getWritableDatabase();
+                wdb.execSQL("UPDATE txns SET type='TRANSFER' WHERE _key=?",
+                    new Object[]{r[0]});
+                wdb.execSQL("UPDATE txns SET type='TRANSFER' WHERE _key=?",
+                    new Object[]{pair});
+                used.add(r[0]);
+                used.add(pair);
+                fixed++;
+            }
+        }
+        return fixed;
+    }
+
     public void upsertDue(CardDue d) {
         ContentValues v = new ContentValues();
         v.put("cardKey", d.cardKey);
