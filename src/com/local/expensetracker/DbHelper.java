@@ -515,6 +515,72 @@ public class DbHelper extends SQLiteOpenHelper {
         return out;
     }
 
+    /** Distinct credit cards seen in SMS (bankCode, bankName, card4),
+     *  from card spends and card dues, so the user can tick their own
+     *  cards in "My cards". */
+    public java.util.List<String[]> discoverCards() {
+        java.util.Map<String, String[]> out =
+            new java.util.LinkedHashMap<String, String[]>();
+        android.database.Cursor c = getReadableDatabase().rawQuery(
+            "SELECT DISTINCT bankCode, bankName, card4 FROM txns"
+            + " WHERE type='CARD_SPEND' AND card4 IS NOT NULL AND card4<>''",
+            null);
+        while (c.moveToNext()) {
+            String k = c.getString(0) + "|" + c.getString(2);
+            if (!out.containsKey(k)) {
+                out.put(k, new String[]{c.getString(0), c.getString(1),
+                    c.getString(2)});
+            }
+        }
+        c.close();
+        android.database.Cursor d = getReadableDatabase().rawQuery(
+            "SELECT cardKey, bankName, card4 FROM dues"
+            + " WHERE card4 IS NOT NULL AND card4<>''", null);
+        while (d.moveToNext()) {
+            String key = d.getString(0);
+            String code = key != null && key.contains("|")
+                ? key.substring(0, key.indexOf('|')) : "";
+            String k = code + "|" + d.getString(2);
+            if (!out.containsKey(k)) {
+                out.put(k, new String[]{code, d.getString(1), d.getString(2)});
+            }
+        }
+        d.close();
+        java.util.List<String[]> list =
+            new java.util.ArrayList<String[]>(out.values());
+        java.util.Collections.sort(list, new java.util.Comparator<String[]>() {
+            @Override public int compare(String[] a, String[] b) {
+                int c = a[1].compareTo(b[1]);
+                return c != 0 ? c : a[2].compareTo(b[2]);
+            }
+        });
+        return list;
+    }
+
+    /** Delete income rows that are really money credited to one of the
+     *  user's own credit cards (bill payments / refunds stored before the
+     *  card registry existed). Idempotent; returns the rows removed. */
+    public int removeCardAccountCredits(java.util.Set<String> card4s) {
+        if (card4s == null || card4s.isEmpty()) return 0;
+        StringBuilder ph = new StringBuilder();
+        java.util.List<String> args = new java.util.ArrayList<String>();
+        for (String c4 : card4s) {
+            if (c4 == null || c4.length() != 4) continue;
+            if (ph.length() > 0) ph.append(",");
+            ph.append("?");
+            args.add(c4);
+        }
+        if (args.isEmpty()) return 0;
+        SQLiteDatabase wdb = getWritableDatabase();
+        wdb.execSQL("DELETE FROM txns WHERE type='CREDIT' AND card4 IN ("
+            + ph + ")", args.toArray(new Object[0]));
+        Cursor c = wdb.rawQuery("SELECT changes()", null);
+        int n = 0;
+        if (c.moveToFirst()) n = c.getInt(0);
+        c.close();
+        return n;
+    }
+
     /**
      * Find a same-day, same-amount transfer pair candidate. A CREDIT pairs
      * against a DEBIT/TRANSFER leg and vice versa, from a different account.

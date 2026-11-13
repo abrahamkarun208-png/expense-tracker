@@ -147,6 +147,49 @@ public class SmsParser {
         setUserNames(n);
     }
 
+    /** The phone owner's credit cards (last-4 digits), set at app start
+     *  and when the user updates "My cards". Used to spot money credited
+     *  to a card account (bill payments, refunds) so it is never counted
+     *  as bank-account income. Purely local; never leaves the phone. */
+    private static final java.util.Set<String> myCards =
+        new java.util.HashSet<String>();
+
+    /** Set once at process start (Application.onCreate) and when the user
+     *  updates their cards. Only exact 4-digit entries are kept. */
+    public static void setMyCards(java.util.Set<String> cards) {
+        myCards.clear();
+        if (cards != null) {
+            for (String c : cards) {
+                String t = c == null ? "" : c.trim();
+                if (t.length() == 4 && t.matches("\\d{4}")) myCards.add(t);
+            }
+        }
+    }
+
+    /** True when these last-4 digits belong to one of the user's own cards. */
+    public static boolean isMyCard(String card4) {
+        return card4 != null && myCards.contains(card4);
+    }
+
+    /** True when the SMS is about a credit card (not a bank account). */
+    private static boolean isCardContext(String low, String body) {
+        return low.contains("credit card") || low.contains("debit card")
+            || !extractCard4(body).isEmpty()
+            || (low.contains("card") && (low.contains("spent")
+                || low.contains("purchase") || low.contains("swipe")));
+    }
+
+    /** "credited to (your/the) ... card" - money landed on the card
+     *  account, never on a bank account. The middle span allows the bank
+     *  name ("your HDFC Bank Credit Card") but no digits or punctuation,
+     *  so "credited to your A/c XX5533" can never match. */
+    private static final Pattern CREDITED_TO_CARD = Pattern.compile(
+        "(?i)credited to (your |the )?[a-z ]{0,30}?card\\b");
+
+    private static boolean isCreditedToCard(String low) {
+        return CREDITED_TO_CARD.matcher(low).find();
+    }
+
     /** Lowercase, single spaces, for name comparison. */
     private static String normName(String s) {
         return s.toLowerCase(Locale.US).trim().replaceAll("\\s+", " ");
@@ -271,6 +314,18 @@ public class SmsParser {
         if (firstAmt <= 0) return null;
         String type = classify(low, body, addr);
         if (type == null) return null;
+        // 3a) Money credited TO a credit card is not bank-account income:
+        // card-bill payments and refunds arrive as "Rs X credited to your
+        // Credit Card ending 1234" (no word "payment", so section 2 misses
+        // them) and classify() reads them as CREDIT. Drop them when the
+        // card is one of the user's own, or when the wording explicitly
+        // credits the card account.
+        if ("CREDIT".equals(type) && isCardContext(low, body)) {
+            String c4 = extractCard4(body);
+            if (!c4.isEmpty() && (isMyCard(c4) || isCreditedToCard(low))) {
+                return null;
+            }
+        }
         // Self-transfer between the user's own accounts: moving their own
         // money, so it must not inflate income or expenses. Keep the
         // direction (OUT/IN) so the Transfers view can show from -> to.
@@ -396,10 +451,7 @@ public class SmsParser {
     }
 
     private static String classify(String low, String body, String addr) {
-        boolean cardCtx = low.contains("credit card") || low.contains("debit card")
-            || !extractCard4(body).isEmpty()
-            || (low.contains("card") && (low.contains("spent") || low.contains("purchase")
-                || low.contains("swipe")));
+        boolean cardCtx = isCardContext(low, body);
         boolean upiCtx = low.contains("upi");
         boolean strongDebit = low.contains("debit") || low.contains("spent") || low.contains("purchase")
             || low.contains("paid") || low.contains("withdrawn") || low.contains("charged")

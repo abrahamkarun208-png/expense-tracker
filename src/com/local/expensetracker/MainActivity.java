@@ -51,6 +51,8 @@ public class MainActivity extends Activity {
     private static final long DAY_MS = 86400000L;
 
     private DbHelper db;
+    /** The user's own credit cards (last-4 digits), from "My cards". */
+    private java.util.Set<String> myCardSet = new java.util.HashSet<String>();
     private LinearLayout txnContainer;
     private LinearLayout dueContainer;
     private LinearLayout transferContainer;
@@ -110,6 +112,7 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         db = new DbHelper(this);
         loadMyAccounts();
+        loadMyCards();
 
         txnContainer = findViewById(R.id.txnContainer);
         dueContainer = findViewById(R.id.dueContainer);
@@ -174,6 +177,9 @@ public class MainActivity extends Activity {
 
         db.removeNearDuplicates();
         db.repairDuplicateTxns();
+        // Money already stored as income that was really credited to one
+        // of the user's own cards (bill payments, refunds).
+        db.removeCardAccountCredits(myCardSet);
 
         // Footer shows the version so a bug report can name it.
         try {
@@ -1000,6 +1006,11 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setView(root)
+            .setNeutralButton("My cards", new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int which) {
+                    showMyCardsDialog();
+                }
+            })
             .setPositiveButton("Close", null)
             .show();
     }
@@ -1249,6 +1260,142 @@ public class MainActivity extends Activity {
             : new java.util.HashSet<String>(raw);
         db.setMyAccounts(accts,
             prefs.getBoolean("my_accounts_configured", false));
+    }
+
+    /** Load the user-confirmed "my cards" registry into the parser. */
+    private void loadMyCards() {
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        java.util.Set<String> raw = prefs.getStringSet("my_cards", null);
+        myCardSet = raw == null
+            ? new java.util.HashSet<String>()
+            : new java.util.HashSet<String>(raw);
+        SmsParser.setMyCards(myCardSet);
+    }
+
+    /** "My cards": the user enters their credit cards' last 4 digits, or
+     *  ticks cards the app has already seen in SMS. Money credited to
+     *  these cards (bill payments, refunds) is kept out of income.
+     *  Everything stays on the phone. */
+    private void showMyCardsDialog() {
+        final java.util.List<String[]> entries = db.discoverCards();
+        int pad = dp(20);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(pad, dp(8), pad, 0);
+
+        TextView hint = new TextView(this);
+        hint.setText("Your credit cards' last 4 digits. Money credited to"
+            + " these cards \u2014 bill payments, refunds \u2014 is not"
+            + " income, so it stays out of the income total.");
+        hint.setTextSize(13);
+        hint.setTextColor(getColor(R.color.muted));
+        hint.setPadding(0, 0, 0, dp(8));
+        wrap.addView(hint);
+
+        final LinearLayout boxList = new LinearLayout(this);
+        boxList.setOrientation(LinearLayout.VERTICAL);
+        final java.util.List<CheckBox> boxes = new java.util.ArrayList<CheckBox>();
+        for (String[] a : entries) {
+            CheckBox cb = new CheckBox(this);
+            cb.setText(a[1] + " \u2022\u2022\u2022\u2022 " + a[2]);
+            cb.setChecked(myCardSet.contains(a[2]));
+            cb.setTextColor(getColor(R.color.ink));
+            boxList.addView(cb);
+            boxes.add(cb);
+        }
+        ScrollView sv = new ScrollView(this);
+        sv.addView(boxList);
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(200));
+        svLp.bottomMargin = dp(8);
+        wrap.addView(sv, svLp);
+
+        // Manual entry, for a card the app has not seen in SMS yet.
+        LinearLayout addRow = new LinearLayout(this);
+        addRow.setOrientation(LinearLayout.HORIZONTAL);
+        final EditText digitsInput = new EditText(this);
+        digitsInput.setHint("Last 4 digits");
+        digitsInput.setInputType(
+            android.text.InputType.TYPE_CLASS_NUMBER);
+        digitsInput.setTextSize(14);
+        LinearLayout.LayoutParams inLp = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        addRow.addView(digitsInput, inLp);
+        Button addBtn = new Button(this);
+        addBtn.setText("Add");
+        addBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                String d = digitsInput.getText().toString().trim();
+                if (d.length() != 4 || !d.matches("\\d{4}")) {
+                    Toast.makeText(MainActivity.this,
+                        "Enter exactly 4 digits",
+                        Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                for (String[] e : entries) {
+                    if (d.equals(e[2])) {
+                        Toast.makeText(MainActivity.this,
+                            "That card is already listed",
+                            Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                }
+                entries.add(new String[]{"", "Card", d});
+                CheckBox cb = new CheckBox(MainActivity.this);
+                cb.setText("Card \u2022\u2022\u2022\u2022 " + d);
+                cb.setChecked(true);
+                cb.setTextColor(getColor(R.color.ink));
+                boxList.addView(cb);
+                boxes.add(cb);
+                digitsInput.setText("");
+            }
+        });
+        addRow.addView(addBtn);
+        wrap.addView(addRow);
+
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.END);
+        Button cancelBtn = new Button(this);
+        cancelBtn.setText("Cancel");
+        Button saveBtn = new Button(this);
+        saveBtn.setText("Save");
+        btnRow.addView(cancelBtn);
+        btnRow.addView(saveBtn);
+        wrap.addView(btnRow);
+
+        final AlertDialog dlg = new AlertDialog.Builder(this)
+            .setTitle("My cards")
+            .setView(wrap)
+            .create();
+        cancelBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dlg.dismiss(); }
+        });
+        saveBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                java.util.Set<String> set = new java.util.HashSet<String>();
+                for (int i = 0; i < entries.size(); i++) {
+                    if (boxes.get(i).isChecked()) {
+                        set.add(entries.get(i)[2]);
+                    }
+                }
+                getPreferences(MODE_PRIVATE).edit()
+                    .putStringSet("my_cards", set)
+                    .apply();
+                myCardSet = new java.util.HashSet<String>(set);
+                SmsParser.setMyCards(myCardSet);
+                dlg.dismiss();
+                int fixed = db.removeCardAccountCredits(myCardSet);
+                refreshUi();
+                Toast.makeText(MainActivity.this,
+                    fixed > 0 ? "Saved \u2014 " + fixed + " card credit"
+                        + (fixed == 1 ? "" : "s")
+                        + " removed from income"
+                        : "Saved",
+                    Toast.LENGTH_LONG).show();
+            }
+        });
+        dlg.show();
     }
 
     /** "My accounts" picker: the app lists every bank account it has seen in
