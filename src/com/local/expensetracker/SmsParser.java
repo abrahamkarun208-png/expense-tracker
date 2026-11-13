@@ -29,6 +29,10 @@ public class SmsParser {
         public String card4 = "";
         public String cardKey = "";
         public String currency = "INR";   // INR, QAR, AUD, USD (from the amount token)
+        /** For self-transfers: OUT when money left the account, IN when it
+         *  arrived. Set when the direction is known before the type is
+         *  upgraded to TRANSFER. */
+        public String transferDir;
         public double totalDue;
         public double minDue;
         public long dueTs;
@@ -264,8 +268,10 @@ public class SmsParser {
         String type = classify(low, body, addr);
         if (type == null) return null;
         // Self-transfer between the user's own accounts: moving their own
-        // money, so it must not inflate income or expenses.
+        // money, so it must not inflate income or expenses. Keep the
+        // direction (OUT/IN) so the Transfers view can show from -> to.
         if (("CREDIT".equals(type) || "DEBIT".equals(type)) && isSelfTransfer(body)) {
+            r.transferDir = "DEBIT".equals(type) ? "OUT" : "IN";
             type = "TRANSFER";
         }
 

@@ -27,6 +27,12 @@ spending splits — with **no servers, no accounts, and no internet access**.
   are detected from SMS and labelled; tap a card to set its auto-pay mode
   (Off / Total due / Minimum due) and get a reminder 2 days before the
   debit. Past-due unpaid cards show as **Outstanding / Missed**
+- Inter-bank transfers are consolidated in their own Transfers section:
+  the two legs of one transfer show as a single entry
+  ("HDFC ....1234 -> SBI ....5678"), separate from expenses. The
+  transaction list shows income and expenses only; tapping the Expenses
+  tile groups expenses by the bank they were debited from, and tapping
+  any transaction shows its source bank
 - Daily / Weekly / Monthly spending totals, transaction list with bank
   badges and type pills, credit-card dues section, rescan button
 - Storage: on-device SQLite only (`expenses.db`)

@@ -23,16 +23,27 @@ public class TxnAdapter extends BaseAdapter {
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_TXN = 1;
 
+    /** Called when the user taps a transaction row. */
+    public interface OnTxnClick {
+        void onTxnClick(Transaction t);
+    }
+
     private final Context ctx;
     private final LayoutInflater inflater;
     private final List<Object> items;
+    private final OnTxnClick clickListener;
     private final SimpleDateFormat df =
         new SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault());
 
     public TxnAdapter(Context c, List<Object> items) {
+        this(c, items, null);
+    }
+
+    public TxnAdapter(Context c, List<Object> items, OnTxnClick listener) {
         this.ctx = c;
         this.inflater = LayoutInflater.from(c);
         this.items = items;
+        this.clickListener = listener;
     }
 
     @Override public int getCount() { return items.size(); }
@@ -77,6 +88,7 @@ public class TxnAdapter extends BaseAdapter {
 
     private View txnView(Transaction t, View v, ViewGroup parent) {
         if (v == null) v = inflater.inflate(R.layout.item_txn, parent, false);
+        final Transaction txn = t;
 
         int color;
         if ("CREDIT".equals(t.type)) {
@@ -110,6 +122,13 @@ public class TxnAdapter extends BaseAdapter {
         TextView amount = v.findViewById(R.id.amount);
         amount.setText(fmt(t));
         amount.setTextColor(color);
+
+        // Tap a row to see the detail: which bank it was debited from.
+        v.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                if (clickListener != null) clickListener.onTxnClick(txn);
+            }
+        });
         return v;
     }
 

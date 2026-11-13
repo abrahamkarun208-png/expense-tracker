@@ -53,6 +53,8 @@ public class MainActivity extends Activity {
     private DbHelper db;
     private LinearLayout txnContainer;
     private LinearLayout dueContainer;
+    private LinearLayout transferContainer;
+    private TextView emptyTransfers;
     private TextView permNotice;
     private Button permButton;
     // NET hero card
@@ -111,6 +113,8 @@ public class MainActivity extends Activity {
 
         txnContainer = findViewById(R.id.txnContainer);
         dueContainer = findViewById(R.id.dueContainer);
+        transferContainer = findViewById(R.id.transferContainer);
+        emptyTransfers = findViewById(R.id.emptyTransfers);
         emptyTxns = findViewById(R.id.emptyTxns);
         emptyDues = findViewById(R.id.emptyDues);
         netLabel = findViewById(R.id.netLabel);
@@ -225,8 +229,9 @@ public class MainActivity extends Activity {
         findViewById(R.id.tileIncome).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { showIncomeBreakdown(); }
         });
+        // EXPENSES tile: expenses grouped by the bank they were debited from.
         findViewById(R.id.tileExpense).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { showAccountBreakdown(); }
+            @Override public void onClick(View v) { showExpensesByBank(); }
         });
 
         permButton.setOnClickListener(new View.OnClickListener() {
@@ -754,9 +759,14 @@ public class MainActivity extends Activity {
 
         List<Transaction> txns = db.getTxnsBetween(start, end);
         // Day-grouped headers everywhere: "TODAY \u00B7 SAT 3 OCT" with
-        // Exp/Inc totals, matching the approved mockup.
+        // Exp/Inc totals, matching the approved mockup. Transfers are not in
+        // this list: they have their own consolidated section below.
         List<Object> rows = TxnGrouper.groupByDay(txns);
-        new TxnAdapter(this, rows).populate(txnContainer);
+        new TxnAdapter(this, rows, new TxnAdapter.OnTxnClick() {
+            @Override public void onTxnClick(Transaction t) {
+                showTxnDetail(t);
+            }
+        }).populate(txnContainer);
         emptyTxns.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
 
         boolean showPie = (period == 1 || period == 2);
@@ -772,6 +782,14 @@ public class MainActivity extends Activity {
             }
         }).populate(dueContainer);
         emptyDues.setVisibility(dues.isEmpty() ? View.VISIBLE : View.GONE);
+
+        // Consolidated inter-bank transfers, separate from expenses: the two
+        // legs of one transfer show as a single entry.
+        List<TransferGrouper.Entry> transfers =
+            TransferGrouper.consolidate(db.getTransfers(start, end));
+        new TransferAdapter(this, transfers).populate(transferContainer);
+        emptyTransfers.setVisibility(
+            transfers.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
     /** Builds the merchant-breakdown donut for weekly/monthly tabs. */
@@ -985,13 +1003,30 @@ public class MainActivity extends Activity {
             .show();
     }
 
-    /** Tapping a NET-card tile: every account's income and expenses. */
-    private void showAccountBreakdown() {
+    /** Tapping the EXPENSES tile: expenses grouped by the bank they were
+     *  debited from. Tapping a bank shows its expense transactions. */
+    private void showExpensesByBank() {
         long[] r = currentRange();
-        List<DbHelper.AccountSummary> banks = new ArrayList<DbHelper.AccountSummary>();
-        List<DbHelper.AccountSummary> cards = new ArrayList<DbHelper.AccountSummary>();
-        for (DbHelper.AccountSummary a : db.accountSummaries(r[0], r[1])) {
-            if (a.isCard) cards.add(a); else banks.add(a);
+        List<Transaction> txns = db.getTxnsBetween(r[0], r[1]);
+        // Group expenses by bank + last-4, keeping card swipes apart from
+        // bank-account debits (the same digits can mean different things).
+        Map<String, List<Transaction>> byBank =
+            new LinkedHashMap<String, List<Transaction>>();
+        double total = 0;
+        String cur = "INR";
+        for (Transaction t : txns) {
+            if (!("DEBIT".equals(t.type) || "CARD_SPEND".equals(t.type))) continue;
+            total += t.amount;
+            cur = t.currency;
+            boolean card = "CARD_SPEND".equals(t.type);
+            String key = (t.bankCode == null ? "" : t.bankCode) + "|"
+                + (t.card4 == null ? "" : t.card4) + "|" + (card ? "C" : "B");
+            List<Transaction> l = byBank.get(key);
+            if (l == null) {
+                l = new ArrayList<Transaction>();
+                byBank.put(key, l);
+            }
+            l.add(t);
         }
 
         LinearLayout root = new LinearLayout(this);
@@ -1000,7 +1035,7 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("Accounts");
+        title.setText("Expenses \u00b7 " + MoneyFmt.money(total, cur));
         title.setTextSize(18);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(getColor(R.color.ink));
@@ -1012,22 +1047,55 @@ public class MainActivity extends Activity {
         else if (period == 3) subText = new SimpleDateFormat("d MMM yyyy",
             Locale.getDefault()).format(new Date(r[0]));
         else subText = monthTitle.getText().toString();
-        sub.setText(subText);
+        sub.setText(subText + " \u00b7 by bank");
         sub.setTextSize(13);
         sub.setTextColor(getColor(R.color.muted));
         sub.setPadding(0, dp(4), 0, dp(12));
 
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        if (banks.isEmpty() && cards.isEmpty()) {
+        if (byBank.isEmpty()) {
             TextView t = new TextView(this);
-            t.setText("No account activity this month.");
+            t.setText("No expenses in this period.");
             t.setTextSize(13);
             t.setTextColor(getColor(R.color.muted));
             list.addView(t);
         } else {
-            addAccountSection(list, "Bank accounts", banks, false);
-            addAccountSection(list, "Credit cards", cards, true);
+            for (Map.Entry<String, List<Transaction>> e : byBank.entrySet()) {
+                final List<Transaction> members = e.getValue();
+                Transaction first = members.get(0);
+                boolean card = "CARD_SPEND".equals(first.type);
+                double sum = 0;
+                for (Transaction t : members) sum += t.amount;
+                final String bankTitle = bankLabel(first)
+                    + (card ? " card" : "");
+
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(0, dp(8), 0, dp(8));
+
+                TextView name = new TextView(this);
+                name.setText(bankTitle);
+                name.setTextSize(15);
+                name.setTypeface(Typeface.DEFAULT_BOLD);
+                name.setTextColor(getColor(R.color.ink));
+                row.addView(name);
+
+                TextView figures = new TextView(this);
+                figures.setText(members.size() + " expense"
+                    + (members.size() == 1 ? "" : "s")
+                    + "  \u00b7  " + MoneyFmt.money(sum, first.currency));
+                figures.setTextSize(13);
+                figures.setTextColor(getColor(R.color.debit));
+                row.addView(figures);
+
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) {
+                        showBankExpenses(members, bankTitle);
+                    }
+                });
+                list.addView(row);
+            }
         }
 
         ScrollView sv = new ScrollView(this);
@@ -1047,6 +1115,124 @@ public class MainActivity extends Activity {
                     showMyAccountsDialog();
                 }
             })
+            .setPositiveButton("Close", null)
+            .show();
+    }
+
+    /** One bank's expense transactions, newest first. Tap a row for detail. */
+    private void showBankExpenses(final List<Transaction> members,
+                                  String bankTitle) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText(bankTitle);
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(getColor(R.color.ink));
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        SimpleDateFormat df = new SimpleDateFormat("d MMM, h:mm a",
+            Locale.getDefault());
+        for (final Transaction t : members) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(0, dp(8), 0, dp(8));
+
+            LinearLayout left = new LinearLayout(this);
+            left.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            left.setLayoutParams(leftLp);
+
+            TextView m = new TextView(this);
+            m.setText(t.merchant == null || t.merchant.isEmpty()
+                ? "Expense" : t.merchant);
+            m.setTextSize(14);
+            m.setTypeface(Typeface.DEFAULT_BOLD);
+            m.setTextColor(getColor(R.color.ink));
+            left.addView(m);
+
+            TextView d = new TextView(this);
+            d.setText(df.format(new Date(t.ts)));
+            d.setTextSize(12);
+            d.setTextColor(getColor(R.color.muted));
+            left.addView(d);
+            row.addView(left);
+
+            TextView amt = new TextView(this);
+            amt.setText("-" + MoneyFmt.money(t.amount, t.currency));
+            amt.setTextSize(14);
+            amt.setTypeface(Typeface.DEFAULT_BOLD);
+            amt.setTextColor(getColor(R.color.debit));
+            row.addView(amt);
+
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    showTxnDetail(t);
+                }
+            });
+            list.addView(row);
+        }
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(list, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(380)));
+
+        root.addView(title);
+        root.addView(sv);
+
+        new AlertDialog.Builder(this)
+            .setView(root)
+            .setPositiveButton("Close", null)
+            .show();
+    }
+
+    /** "HDFC Bank ....1234" (or just the bank name when no digits exist). */
+    private String bankLabel(Transaction t) {
+        String b = (t.bankName == null || t.bankName.isEmpty())
+            ? (t.bankCode == null ? "Unknown" : t.bankCode) : t.bankName;
+        if (t.card4 != null && !t.card4.isEmpty()) {
+            b += " \u2022\u2022\u2022\u2022 " + t.card4;
+        }
+        return b;
+    }
+
+    /** Tap a transaction row: what it was, and which bank it was debited from. */
+    private void showTxnDetail(Transaction t) {
+        String typeLine;
+        String bankLine;
+        String acct = (t.card4 == null || t.card4.isEmpty())
+            ? "" : " \u2022\u2022\u2022\u2022 " + t.card4;
+        String bank = (t.bankName == null || t.bankName.isEmpty())
+            ? "Unknown bank" : t.bankName;
+        if ("CARD_SPEND".equals(t.type)) {
+            typeLine = "Card spend";
+            bankLine = "Spent on " + bank + " card" + acct;
+        } else if ("DEBIT".equals(t.type)) {
+            typeLine = "Expense";
+            bankLine = "Debited from " + bank + acct;
+        } else if ("CREDIT".equals(t.type)) {
+            typeLine = "Income";
+            bankLine = "Credited to " + bank + acct;
+        } else {
+            typeLine = "Transfer";
+            bankLine = bank + acct;
+        }
+        String date = new SimpleDateFormat("d MMM yyyy, h:mm a",
+            Locale.getDefault()).format(new Date(t.ts));
+        String merchant = t.merchant == null || t.merchant.isEmpty()
+            ? typeLine : t.merchant;
+        String msg = MoneyFmt.money(t.amount, t.currency) + "\n"
+            + typeLine + "\n" + bankLine + "\n" + date;
+        new AlertDialog.Builder(this)
+            .setTitle(merchant)
+            .setMessage(msg)
             .setPositiveButton("Close", null)
             .show();
     }
@@ -1150,78 +1336,6 @@ public class MainActivity extends Activity {
             }
         });
         dlg.show();
-    }
-
-    private void addAccountSection(LinearLayout list, String header,
-                                   List<DbHelper.AccountSummary> accounts,
-                                   boolean isCardSection) {
-        if (accounts.isEmpty()) return;
-        TextView h = new TextView(this);
-        h.setText(header.toUpperCase(Locale.getDefault()));
-        h.setTextSize(12);
-        h.setTypeface(Typeface.DEFAULT_BOLD);
-        h.setTextColor(getColor(R.color.muted));
-        h.setPadding(0, dp(10), 0, dp(2));
-        list.addView(h);
-        for (DbHelper.AccountSummary a : accounts) {
-            list.addView(accountRow(a, isCardSection));
-        }
-    }
-
-    private View accountRow(DbHelper.AccountSummary a, boolean isCard) {
-        String name = (a.bankName == null || a.bankName.isEmpty())
-            ? (a.bankCode == null ? "Unknown" : a.bankCode) : a.bankName;
-        if (a.card4 != null && !a.card4.isEmpty()) {
-            name += " \u00B7\u00B7\u00B7\u00B7 " + a.card4;
-        }
-        if (isCard) name = "\uD83D\uDCB3 " + name; // card symbol
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(0, dp(8), 0, dp(8));
-
-        TextView nameView = new TextView(this);
-        nameView.setText(name);
-        nameView.setTextSize(15);
-        nameView.setTypeface(Typeface.DEFAULT_BOLD);
-        nameView.setTextColor(getColor(R.color.ink));
-
-        LinearLayout figures = new LinearLayout(this);
-        figures.setOrientation(LinearLayout.HORIZONTAL);
-        figures.setPadding(0, dp(4), 0, 0);
-
-        if (!isCard || a.income > 0) {
-            TextView inc = new TextView(this);
-            inc.setText("\u2191 " + MoneyFmt.money(a.income, a.currency));
-            inc.setTextSize(13);
-            inc.setTextColor(getColor(R.color.credit));
-            figures.addView(inc);
-        }
-
-        TextView exp = new TextView(this);
-        exp.setText("\u2193 " + MoneyFmt.money(a.expenses, a.currency));
-        exp.setTextSize(13);
-        exp.setTextColor(getColor(R.color.debit));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(dp(16), 0, dp(16), 0);
-        exp.setLayoutParams(lp);
-        figures.addView(exp);
-
-        if (!isCard) {
-            TextView net = new TextView(this);
-            double n = a.income - a.expenses;
-            net.setText("Net " + (n < 0 ? "-" : "+")
-                + MoneyFmt.money(Math.abs(n), a.currency));
-            net.setTextSize(13);
-            net.setTextColor(getColor(R.color.muted));
-            figures.addView(net);
-        }
-
-        row.addView(nameView);
-        row.addView(figures);
-        return row;
     }
 
     /** Calendar day tap: where the money went that day, by merchant. */

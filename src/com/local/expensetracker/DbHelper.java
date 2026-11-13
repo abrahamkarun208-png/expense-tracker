@@ -15,7 +15,7 @@ import java.util.List;
 public class DbHelper extends SQLiteOpenHelper {
 
     private static final String DB = "expenses.db";
-    private static final int VER = 3;
+    private static final int VER = 4;
 
     public DbHelper(Context c) {
         super(c, DB, null, VER);
@@ -25,7 +25,8 @@ public class DbHelper extends SQLiteOpenHelper {
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE txns(_key TEXT PRIMARY KEY, bankCode TEXT, bankName TEXT,"
             + " amount REAL, type TEXT, merchant TEXT, ts INTEGER, card4 TEXT,"
-            + " currency TEXT NOT NULL DEFAULT 'INR')");
+            + " currency TEXT NOT NULL DEFAULT 'INR',"
+            + " transferDir TEXT, pairKey TEXT)");
         db.execSQL("CREATE INDEX idx_txns_ts ON txns(ts)");
         db.execSQL("CREATE TABLE dues(cardKey TEXT PRIMARY KEY, bankName TEXT, card4 TEXT,"
             + " totalDue REAL, minDue REAL, dueTs INTEGER, status TEXT, paid REAL,"
@@ -45,6 +46,12 @@ public class DbHelper extends SQLiteOpenHelper {
         if (oldV < 3) {
             db.execSQL("ALTER TABLE dues ADD COLUMN autoPayMode TEXT NOT NULL DEFAULT 'OFF'");
             db.execSQL("ALTER TABLE dues ADD COLUMN lastPaySrc TEXT");
+        }
+        // v4: transfer direction (OUT/IN) and pair link, so the Transfers
+        // view can consolidate the two legs of one inter-bank transfer.
+        if (oldV < 4) {
+            db.execSQL("ALTER TABLE txns ADD COLUMN transferDir TEXT");
+            db.execSQL("ALTER TABLE txns ADD COLUMN pairKey TEXT");
         }
     }
 
@@ -145,6 +152,8 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("ts", t.ts);
         v.put("card4", t.card4);
         v.put("currency", t.currency == null ? "INR" : t.currency);
+        v.put("transferDir", t.transferDir);
+        v.put("pairKey", t.pairKey);
         getWritableDatabase().insertWithOnConflict("txns", null, v,
             SQLiteDatabase.CONFLICT_IGNORE);
     }
@@ -152,7 +161,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<Transaction> getTxnsSince(long cutoffTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency FROM txns"
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey FROM txns"
                 + " WHERE ts>=? ORDER BY ts DESC",
             new String[]{String.valueOf(cutoffTs)});
         while (c.moveToNext()) {
@@ -166,6 +175,8 @@ public class DbHelper extends SQLiteOpenHelper {
             t.ts = c.getLong(6);
             t.card4 = c.getString(7);
             t.currency = c.getString(8);
+            t.transferDir = c.getString(9);
+            t.pairKey = c.getString(10);
             out.add(t);
         }
         c.close();
@@ -254,46 +265,6 @@ public class DbHelper extends SQLiteOpenHelper {
         return out;
     }
 
-    /** Per-account income/expenses for a range, one row per bank + last-4. */
-    public static class AccountSummary {
-        public String bankCode;
-        public String bankName;
-        public String card4;
-        public String currency;
-        public double income;
-        public double expenses;
-        /** True when the group is card swipes only (no bank debits/credits). */
-        public boolean isCard;
-    }
-
-    public List<AccountSummary> accountSummaries(long startTs, long endTs) {
-        List<AccountSummary> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().rawQuery(
-            "SELECT bankCode, bankName, card4, currency,"
-                + " SUM(CASE WHEN type='CREDIT' THEN amount ELSE 0 END),"
-                + " SUM(CASE WHEN type IN ('DEBIT','CARD_SPEND') THEN amount ELSE 0 END),"
-                + " SUM(CASE WHEN type='CARD_SPEND' THEN 1 ELSE 0 END),"
-                + " SUM(CASE WHEN type IN ('DEBIT','CREDIT') THEN 1 ELSE 0 END)"
-                + " FROM txns WHERE ts>=? AND ts<=?"
-                + " AND type IN ('CREDIT','DEBIT','CARD_SPEND')"
-                + " GROUP BY bankCode, bankName, card4, currency"
-                + " ORDER BY 6 DESC",
-            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
-        while (c.moveToNext()) {
-            AccountSummary a = new AccountSummary();
-            a.bankCode = c.getString(0);
-            a.bankName = c.getString(1);
-            a.card4 = c.getString(2);
-            a.currency = c.getString(3);
-            a.income = c.getDouble(4);
-            a.expenses = c.getDouble(5);
-            a.isCard = c.getInt(6) > 0 && c.getInt(7) == 0;
-            out.add(a);
-        }
-        c.close();
-        return out;
-    }
-
     /** The earliest unpaid due, for the "due <date>" callout. May be null. */
     public CardDue earliestUnpaidDue() {
         Cursor c = getReadableDatabase().rawQuery(
@@ -335,11 +306,16 @@ public class DbHelper extends SQLiteOpenHelper {
         return out;
     }
 
+    /**
+     * Transactions in a range, newest first. Transfers are excluded here:
+     * they live in their own consolidated Transfers section (getTransfers),
+     * so the list shows income and expenses only.
+     */
     public List<Transaction> getTxnsBetween(long startTs, long endTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency FROM txns"
-                + " WHERE ts>=? AND ts<=? ORDER BY ts DESC",
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey FROM txns"
+                + " WHERE ts>=? AND ts<=? AND type!='TRANSFER' ORDER BY ts DESC",
             new String[]{String.valueOf(startTs), String.valueOf(endTs)});
         while (c.moveToNext()) {
             Transaction t = new Transaction();
@@ -352,6 +328,35 @@ public class DbHelper extends SQLiteOpenHelper {
             t.ts = c.getLong(6);
             t.card4 = c.getString(7);
             t.currency = c.getString(8);
+            t.transferDir = c.getString(9);
+            t.pairKey = c.getString(10);
+            out.add(t);
+        }
+        c.close();
+        return out;
+    }
+
+    /** Inter-bank transfers in a range, newest first, for the consolidated
+     *  Transfers section. */
+    public List<Transaction> getTransfers(long startTs, long endTs) {
+        List<Transaction> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey FROM txns"
+                + " WHERE ts>=? AND ts<=? AND type='TRANSFER' ORDER BY ts DESC",
+            new String[]{String.valueOf(startTs), String.valueOf(endTs)});
+        while (c.moveToNext()) {
+            Transaction t = new Transaction();
+            t.key = c.getString(0);
+            t.bankCode = c.getString(1);
+            t.bankName = c.getString(2);
+            t.amount = c.getDouble(3);
+            t.type = c.getString(4);
+            t.merchant = c.getString(5);
+            t.ts = c.getLong(6);
+            t.card4 = c.getString(7);
+            t.currency = c.getString(8);
+            t.transferDir = c.getString(9);
+            t.pairKey = c.getString(10);
             out.add(t);
         }
         c.close();
@@ -377,7 +382,8 @@ public class DbHelper extends SQLiteOpenHelper {
             like.append("lower(merchant) LIKE '%' || ? || '%'");
         }
         SQLiteDatabase db = getWritableDatabase();
-        db.execSQL("UPDATE txns SET type='TRANSFER'"
+        db.execSQL("UPDATE txns SET type='TRANSFER',"
+            + " transferDir=CASE WHEN type='CREDIT' THEN 'IN' ELSE 'OUT' END"
             + " WHERE type IN ('CREDIT','DEBIT')"
             + " AND merchant IS NOT NULL AND (" + like + ")",
             ns.toArray(new Object[0]));
@@ -388,10 +394,14 @@ public class DbHelper extends SQLiteOpenHelper {
         return count;
     }
 
-    /** Mark one transaction as TRANSFER (used by transfer pair-matching). */
-    public void markTransfer(String key) {
-        getWritableDatabase().execSQL("UPDATE txns SET type='TRANSFER' WHERE _key=?",
-            new Object[]{key});
+    /** Mark one transaction as TRANSFER (used by transfer pair-matching).
+     *  dir is OUT when money left this account, IN when it arrived; pairKey
+     *  links the two legs of the same transfer. */
+    public void markTransfer(String key, String dir, String pairKey) {
+        getWritableDatabase().execSQL(
+            "UPDATE txns SET type='TRANSFER', transferDir=?, pairKey=?"
+                + " WHERE _key=?",
+            new Object[]{dir, pairKey, key});
     }
 
     /** "My accounts" registry, set by the UI from SharedPreferences.
@@ -487,11 +497,18 @@ public class DbHelper extends SQLiteOpenHelper {
             String pair = findPairCandidate(Double.parseDouble(r[1]),
                 Long.parseLong(r[2]), r[3], r[4], false, used);
             if (pair != null) {
+                // The CREDIT row is the IN leg; the candidate is the OUT leg
+                // (a DEBIT row, or an already-marked TRANSFER whose direction
+                // is kept when it is not a plain DEBIT).
+                String pk = "pair|" + r[0];
                 SQLiteDatabase wdb = getWritableDatabase();
-                wdb.execSQL("UPDATE txns SET type='TRANSFER' WHERE _key=?",
-                    new Object[]{r[0]});
-                wdb.execSQL("UPDATE txns SET type='TRANSFER' WHERE _key=?",
-                    new Object[]{pair});
+                wdb.execSQL("UPDATE txns SET type='TRANSFER',"
+                    + " transferDir='IN', pairKey=? WHERE _key=?",
+                    new Object[]{pk, r[0]});
+                wdb.execSQL("UPDATE txns SET type='TRANSFER',"
+                    + " transferDir=CASE WHEN type='DEBIT' THEN 'OUT'"
+                    + " ELSE transferDir END, pairKey=? WHERE _key=?",
+                    new Object[]{pk, pair});
                 used.add(r[0]);
                 used.add(pair);
                 fixed++;

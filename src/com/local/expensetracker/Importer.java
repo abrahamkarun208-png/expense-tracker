@@ -46,6 +46,7 @@ public class Importer {
             t.ts = smsTs;
             t.card4 = r.card4;
             t.currency = r.currency == null ? "INR" : r.currency;
+            t.transferDir = r.transferDir;
             // Nameless self-transfer: same amount, same day, different account,
             // opposite direction (some banks omit the sender name entirely).
             if (("CREDIT".equals(t.type) || "DEBIT".equals(t.type))
@@ -53,8 +54,11 @@ public class Importer {
                 String pair = db.findPairCandidate(t.amount, t.ts, t.bankCode,
                     t.card4, "DEBIT".equals(t.type), null);
                 if (pair != null) {
+                    boolean out = "DEBIT".equals(t.type);
                     t.type = "TRANSFER";
-                    db.markTransfer(pair);
+                    t.transferDir = out ? "OUT" : "IN";
+                    t.pairKey = "pair|" + pair;
+                    db.markTransfer(pair, out ? "IN" : "OUT", t.pairKey);
                 }
             }
             if (db.hasNearDuplicate(t.bankCode, t.amount, t.type, t.merchant, t.ts)) {
