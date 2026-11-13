@@ -173,6 +173,7 @@ public class MainActivity extends Activity {
         });
 
         db.removeNearDuplicates();
+        db.repairDuplicateTxns();
 
         // Footer shows the version so a bug report can name it.
         try {
@@ -1230,6 +1231,9 @@ public class MainActivity extends Activity {
             ? typeLine : t.merchant;
         String msg = MoneyFmt.money(t.amount, t.currency) + "\n"
             + typeLine + "\n" + bankLine + "\n" + date;
+        if (t.ref != null && !t.ref.isEmpty()) {
+            msg += "\nRef " + t.ref;
+        }
         new AlertDialog.Builder(this)
             .setTitle(merchant)
             .setMessage(msg)

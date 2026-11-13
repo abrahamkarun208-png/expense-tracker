@@ -33,6 +33,11 @@ spending splits — with **no servers, no accounts, and no internet access**.
   transaction list shows income and expenses only; tapping the Expenses
   tile groups expenses by the bank they were debited from, and tapping
   any transaction shows its source bank
+- Duplicate-proof imports: the transaction reference (Ref/UTR/RRN) from
+  each SMS identifies a payment, so the same SMS imported twice with
+  different timestamps is stored once. A repair pass removes
+  double-counted rows already stored (same bank, amount and merchant
+  within 10 minutes, earliest kept)
 - Daily / Weekly / Monthly spending totals, transaction list with bank
   badges and type pills, credit-card dues section, rescan button
 - Storage: on-device SQLite only (`expenses.db`)

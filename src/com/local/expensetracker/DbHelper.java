@@ -15,7 +15,7 @@ import java.util.List;
 public class DbHelper extends SQLiteOpenHelper {
 
     private static final String DB = "expenses.db";
-    private static final int VER = 4;
+    private static final int VER = 5;
 
     public DbHelper(Context c) {
         super(c, DB, null, VER);
@@ -26,7 +26,7 @@ public class DbHelper extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE txns(_key TEXT PRIMARY KEY, bankCode TEXT, bankName TEXT,"
             + " amount REAL, type TEXT, merchant TEXT, ts INTEGER, card4 TEXT,"
             + " currency TEXT NOT NULL DEFAULT 'INR',"
-            + " transferDir TEXT, pairKey TEXT)");
+            + " transferDir TEXT, pairKey TEXT, ref TEXT)");
         db.execSQL("CREATE INDEX idx_txns_ts ON txns(ts)");
         db.execSQL("CREATE TABLE dues(cardKey TEXT PRIMARY KEY, bankName TEXT, card4 TEXT,"
             + " totalDue REAL, minDue REAL, dueTs INTEGER, status TEXT, paid REAL,"
@@ -52,6 +52,10 @@ public class DbHelper extends SQLiteOpenHelper {
         if (oldV < 4) {
             db.execSQL("ALTER TABLE txns ADD COLUMN transferDir TEXT");
             db.execSQL("ALTER TABLE txns ADD COLUMN pairKey TEXT");
+        }
+        // v5: transaction reference (Ref/UTR/RRN) for duplicate-proofing.
+        if (oldV < 5) {
+            db.execSQL("ALTER TABLE txns ADD COLUMN ref TEXT");
         }
     }
 
@@ -141,6 +145,73 @@ public class DbHelper extends SQLiteOpenHelper {
                 + " AND (t1.ts<t2.ts OR (t1.ts=t2.ts AND t1._key<t2._key)))");
     }
 
+    /** True when a payment with this bank + reference is already stored.
+     *  The reference is unique per payment, so this catches the same SMS
+     *  imported twice with timestamps minutes apart. */
+    public boolean hasRef(String bankCode, String ref) {
+        if (ref == null) return false;
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT 1 FROM txns WHERE bankCode=? AND ref=? LIMIT 1",
+            new String[]{bankCode, ref});
+        boolean hit = c.moveToFirst();
+        c.close();
+        return hit;
+    }
+
+    /** Fill in the reference on a row that was imported before v1.34.
+     *  Used when a rescan meets the older copy of the same payment:
+     *  same bank/amount/type/merchant within 10 minutes, no ref stored yet.
+     *  Returns true when a row was updated (the SMS is then a duplicate). */
+    public boolean backfillRef(String bankCode, double amount, String type,
+                               String merchant, long ts, String ref) {
+        if (ref == null) return false;
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT _key FROM txns WHERE bankCode=? AND ABS(amount-?)<0.005"
+                + " AND type=? AND COALESCE(merchant,'')=?"
+                + " AND ABS(ts-?)<=600000 AND ref IS NULL LIMIT 1",
+            new String[]{bankCode, String.valueOf(amount), type,
+                merchant == null ? "" : merchant, String.valueOf(ts)});
+        if (!c.moveToFirst()) { c.close(); return false; }
+        String key = c.getString(0);
+        c.close();
+        getWritableDatabase().execSQL("UPDATE txns SET ref=? WHERE _key=?",
+            new Object[]{ref, key});
+        return true;
+    }
+
+    /** Fill in the reference on one known row (re-import of a stored SMS). */
+    public void backfillRefByKey(String key, String ref) {
+        if (key == null || ref == null) return;
+        getWritableDatabase().execSQL(
+            "UPDATE txns SET ref=? WHERE _key=? AND ref IS NULL",
+            new Object[]{ref, key});
+    }
+
+    /**
+     * Delete double-counted rows stored before v1.34: same bank, amount,
+     * type and merchant within 10 minutes, keeping the earliest. Transfers
+     * are excluded (their two legs legitimately share amount and day).
+     * Idempotent; returns the number of rows removed.
+     */
+    public int repairDuplicateTxns() {
+        SQLiteDatabase wdb = getWritableDatabase();
+        wdb.execSQL("DELETE FROM txns WHERE _key IN ("
+            + "SELECT t2._key FROM txns t2 JOIN txns t1"
+            + " ON t1._key<>t2._key"
+            + " AND t1.bankCode=t2.bankCode"
+            + " AND ABS(t1.amount-t2.amount)<0.005"
+            + " AND t1.type=t2.type"
+            + " AND t1.type IN ('DEBIT','CREDIT','CARD_SPEND')"
+            + " AND COALESCE(t1.merchant,'')=COALESCE(t2.merchant,'')"
+            + " AND ABS(t1.ts-t2.ts)<=600000"
+            + " AND (t1.ts<t2.ts OR (t1.ts=t2.ts AND t1._key<t2._key)))");
+        Cursor c = wdb.rawQuery("SELECT changes()", null);
+        int n = 0;
+        if (c.moveToFirst()) n = c.getInt(0);
+        c.close();
+        return n;
+    }
+
     public void insertTxn(Transaction t) {
         ContentValues v = new ContentValues();
         v.put("_key", t.key);
@@ -154,6 +225,7 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("currency", t.currency == null ? "INR" : t.currency);
         v.put("transferDir", t.transferDir);
         v.put("pairKey", t.pairKey);
+        v.put("ref", t.ref);
         getWritableDatabase().insertWithOnConflict("txns", null, v,
             SQLiteDatabase.CONFLICT_IGNORE);
     }
@@ -161,7 +233,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<Transaction> getTxnsSince(long cutoffTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey FROM txns"
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey,ref FROM txns"
                 + " WHERE ts>=? ORDER BY ts DESC",
             new String[]{String.valueOf(cutoffTs)});
         while (c.moveToNext()) {
@@ -177,6 +249,7 @@ public class DbHelper extends SQLiteOpenHelper {
             t.currency = c.getString(8);
             t.transferDir = c.getString(9);
             t.pairKey = c.getString(10);
+            t.ref = c.getString(11);
             out.add(t);
         }
         c.close();
@@ -314,7 +387,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<Transaction> getTxnsBetween(long startTs, long endTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey FROM txns"
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey,ref FROM txns"
                 + " WHERE ts>=? AND ts<=? AND type!='TRANSFER' ORDER BY ts DESC",
             new String[]{String.valueOf(startTs), String.valueOf(endTs)});
         while (c.moveToNext()) {
@@ -330,6 +403,7 @@ public class DbHelper extends SQLiteOpenHelper {
             t.currency = c.getString(8);
             t.transferDir = c.getString(9);
             t.pairKey = c.getString(10);
+            t.ref = c.getString(11);
             out.add(t);
         }
         c.close();
@@ -341,7 +415,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<Transaction> getTransfers(long startTs, long endTs) {
         List<Transaction> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey FROM txns"
+            "SELECT _key,bankCode,bankName,amount,type,merchant,ts,card4,currency,transferDir,pairKey,ref FROM txns"
                 + " WHERE ts>=? AND ts<=? AND type='TRANSFER' ORDER BY ts DESC",
             new String[]{String.valueOf(startTs), String.valueOf(endTs)});
         while (c.moveToNext()) {
@@ -357,6 +431,7 @@ public class DbHelper extends SQLiteOpenHelper {
             t.currency = c.getString(8);
             t.transferDir = c.getString(9);
             t.pairKey = c.getString(10);
+            t.ref = c.getString(11);
             out.add(t);
         }
         c.close();

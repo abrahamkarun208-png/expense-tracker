@@ -18,4 +18,7 @@ public class Transaction {
     public String transferDir;
     /** Links the two legs of one transfer (same value on both rows). */
     public String pairKey;
+    /** Transaction reference from the SMS (Ref/UTR/RRN). Null when the SMS
+     *  carried none, or for rows imported before v1.34. */
+    public String ref;
 }

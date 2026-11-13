@@ -33,6 +33,9 @@ public class SmsParser {
          *  arrived. Set when the direction is known before the type is
          *  upgraded to TRANSFER. */
         public String transferDir;
+        /** Transaction reference from the SMS ("Ref ...", "UTR ...", "RRN ...").
+         *  Unique per payment; null when the SMS carries none. */
+        public String ref;
         public double totalDue;
         public double minDue;
         public long dueTs;
@@ -198,6 +201,7 @@ public class SmsParser {
         Result r = new Result();
         r.bankCode = bank[0];
         r.bankName = bank[1];
+        r.ref = extractRef(body);
 
         double firstAmt = firstAmount(body);
 
@@ -293,6 +297,19 @@ public class SmsParser {
             || low.contains("autodebit") || low.contains("auto pay")
             || low.contains("auto-pay") || low.contains("autopay")
             || low.contains("standing instruction");
+    }
+
+    /** Transaction reference from the SMS ("Ref 630684955119", "UTR ...",
+     *  "RRN ..."). The reference is unique per payment, so it identifies the
+     *  same payment even when it is imported twice with different
+     *  timestamps (live import vs inbox scan can differ by minutes). */
+    private static final Pattern REF = Pattern.compile(
+        "(?i)\\b(?:ref(?:erence)?(?:\\s*no\\.?)?|utr|rrn)\\s*:?\\s*(\\d{6,})");
+
+    private static String extractRef(String body) {
+        Matcher m = REF.matcher(body);
+        if (m.find()) return m.group(1);
+        return null;
     }
 
     private static String[] detectBank(String addr, String body) {

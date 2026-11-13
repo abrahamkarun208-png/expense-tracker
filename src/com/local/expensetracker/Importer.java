@@ -34,6 +34,7 @@ public class Importer {
                 // versions fix old misclassifications (never downgrades
                 // a TRANSFER), then skip.
                 db.reclassifyIfChanged(key, r.type, r.card4);
+                db.backfillRefByKey(key, r.ref);
                 return;
             }
             Transaction t = new Transaction();
@@ -47,6 +48,16 @@ public class Importer {
             t.card4 = r.card4;
             t.currency = r.currency == null ? "INR" : r.currency;
             t.transferDir = r.transferDir;
+            t.ref = r.ref;
+            // Same payment imported twice with different timestamps (live
+            // import vs inbox scan can differ by minutes): the reference
+            // identifies it regardless of the gap. A rescan meeting the
+            // older copy backfills its reference instead of duplicating it.
+            if (r.ref != null && db.hasRef(r.bankCode, r.ref)) return;
+            if (r.ref != null && db.backfillRef(r.bankCode, r.amount, r.type,
+                    r.merchant, smsTs, r.ref)) {
+                return;
+            }
             // Nameless self-transfer: same amount, same day, different account,
             // opposite direction (some banks omit the sender name entirely).
             if (("CREDIT".equals(t.type) || "DEBIT".equals(t.type))
