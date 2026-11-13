@@ -23,7 +23,8 @@ public class Importer {
             return;
         }
         if (r.isPayment) {
-            db.markPaid(r.cardKey, r.amount);
+            db.markPaid(r.cardKey, r.amount,
+                r.isAutoPay ? "AUTO" : "MANUAL");
             return;
         }
         if (r.isTxn) {

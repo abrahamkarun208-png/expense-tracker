@@ -22,8 +22,11 @@ spending splits — with **no servers, no accounts, and no internet access**.
 - Classifies transactions: **Debit / Credit / Transfer** (own-account) /
   **Card Spend** (kept separate)
 - Detects credit-card statements ("Total Amt Due / Min Amt Due / due by")
-  to create dues; payment receipts mark them **Paid**; past-due unpaid
-  cards show as **Outstanding / Missed**
+  to create dues; payments accumulate against the due, so paying only the
+  minimum due leaves the rest visible until it is paid. Auto-pay debits
+  are detected from SMS and labelled; tap a card to set its auto-pay mode
+  (Off / Total due / Minimum due) and get a reminder 2 days before the
+  debit. Past-due unpaid cards show as **Outstanding / Missed**
 - Daily / Weekly / Monthly spending totals, transaction list with bank
   badges and type pills, credit-card dues section, rescan button
 - Storage: on-device SQLite only (`expenses.db`)

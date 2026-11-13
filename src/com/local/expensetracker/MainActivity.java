@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_SMS = 1001;
     private static final int REQ_RECEIVE_SMS = 1002;
+    private static final int REQ_POST_NOTIFICATIONS = 1003;
     private static final long DAY_MS = 86400000L;
 
     private DbHelper db;
@@ -190,6 +191,8 @@ public class MainActivity extends Activity {
         updateChecker.checkIfDue();
         maybePromptForName();
         maybeRepairPairs();
+        // (Re-)schedule auto-pay reminder alarms for cards with auto-pay on.
+        AutoPayScheduler.schedule(this);
 
         View.OnClickListener periodClick = new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -327,11 +330,30 @@ public class MainActivity extends Activity {
             new String[]{Manifest.permission.RECEIVE_SMS}, REQ_RECEIVE_SMS);
     }
 
+    /**
+     * Notification permission for auto-pay reminders (Android 13+). Asked
+     * only when the user turns auto-pay on for a card; if denied, the
+     * in-app due row still shows the auto-pay note.
+     */
+    private void ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(
+            new String[]{Manifest.permission.POST_NOTIFICATIONS},
+            REQ_POST_NOTIFICATIONS);
+    }
+
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         if (code == REQ_RECEIVE_SMS) {
             // Live SMS import permission: granted or not, the incremental
             // scan keeps working. Nothing more to do.
+            return;
+        }
+        if (code == REQ_POST_NOTIFICATIONS) {
+            // Auto-pay reminder permission: granted or not, the in-app due
+            // row still shows the auto-pay note. Nothing more to do.
             return;
         }
         if (code == REQ_SMS && results.length > 0
@@ -742,7 +764,13 @@ public class MainActivity extends Activity {
         if (showPie) updatePie(txns);
 
         List<CardDue> dues = db.getDues();
-        new DueAdapter(this, dues).populate(dueContainer);
+        new DueAdapter(this, dues, new DueAdapter.OnAutoPayChanged() {
+            @Override public void onAutoPayChanged(boolean autoPayOn) {
+                AutoPayScheduler.schedule(MainActivity.this);
+                if (autoPayOn) ensureNotificationPermission();
+                refreshUi();
+            }
+        }).populate(dueContainer);
         emptyDues.setVisibility(dues.isEmpty() ? View.VISIBLE : View.GONE);
     }
 

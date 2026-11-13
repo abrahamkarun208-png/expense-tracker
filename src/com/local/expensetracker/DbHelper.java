@@ -15,7 +15,7 @@ import java.util.List;
 public class DbHelper extends SQLiteOpenHelper {
 
     private static final String DB = "expenses.db";
-    private static final int VER = 2;
+    private static final int VER = 3;
 
     public DbHelper(Context c) {
         super(c, DB, null, VER);
@@ -29,7 +29,8 @@ public class DbHelper extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_txns_ts ON txns(ts)");
         db.execSQL("CREATE TABLE dues(cardKey TEXT PRIMARY KEY, bankName TEXT, card4 TEXT,"
             + " totalDue REAL, minDue REAL, dueTs INTEGER, status TEXT, paid REAL,"
-            + " currency TEXT NOT NULL DEFAULT 'INR')");
+            + " currency TEXT NOT NULL DEFAULT 'INR',"
+            + " autoPayMode TEXT NOT NULL DEFAULT 'OFF', lastPaySrc TEXT)");
     }
 
     @Override
@@ -38,6 +39,12 @@ public class DbHelper extends SQLiteOpenHelper {
         if (oldV < 2) {
             db.execSQL("ALTER TABLE txns ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'");
             db.execSQL("ALTER TABLE dues ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'");
+        }
+        // v3: auto-pay mode per card (OFF/TOTAL/MINIMUM) and the source of the
+        // last payment (MANUAL/AUTO) so dues can equalize against payments.
+        if (oldV < 3) {
+            db.execSQL("ALTER TABLE dues ADD COLUMN autoPayMode TEXT NOT NULL DEFAULT 'OFF'");
+            db.execSQL("ALTER TABLE dues ADD COLUMN lastPaySrc TEXT");
         }
     }
 
@@ -206,10 +213,11 @@ public class DbHelper extends SQLiteOpenHelper {
         return out;
     }
 
-    /** Total of card dues still unpaid (pending or overdue). */
+    /** Total still owed across unpaid dues: total due minus what was already
+     *  paid. A minimum-due payment leaves the rest visible until it is paid. */
     public double unpaidDuesTotal() {
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT SUM(totalDue) FROM dues WHERE status IN ('PENDING','OUTSTANDING')",
+            "SELECT SUM(MAX(totalDue-paid,0)) FROM dues WHERE status IN ('PENDING','OUTSTANDING')",
             null);
         double s = c.moveToFirst() && !c.isNull(0) ? c.getDouble(0) : 0;
         c.close();
@@ -289,7 +297,7 @@ public class DbHelper extends SQLiteOpenHelper {
     /** The earliest unpaid due, for the "due <date>" callout. May be null. */
     public CardDue earliestUnpaidDue() {
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid,currency FROM dues"
+            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid,currency,autoPayMode,lastPaySrc FROM dues"
                 + " WHERE status IN ('PENDING','OUTSTANDING')"
                 + " ORDER BY dueTs ASC LIMIT 1", null);
         CardDue d = null;
@@ -304,6 +312,8 @@ public class DbHelper extends SQLiteOpenHelper {
             d.status = c.getString(6);
             d.paid = c.getDouble(7);
             d.currency = c.getString(8);
+            d.autoPayMode = c.getString(9);
+            d.lastPaySrc = c.getString(10);
         }
         c.close();
         return d;
@@ -490,7 +500,37 @@ public class DbHelper extends SQLiteOpenHelper {
         return fixed;
     }
 
+    /**
+     * Store a statement. A re-import of the *same* statement (same total due
+     * and due date, e.g. the once-per-version full rescan) keeps whatever was
+     * already paid against it; a statement with a different total or due date
+     * is a new billing cycle, so paid resets to 0. The user's auto-pay mode
+     * is always preserved.
+     */
     public void upsertDue(CardDue d) {
+        SQLiteDatabase wdb = getWritableDatabase();
+        Cursor c = wdb.rawQuery(
+            "SELECT totalDue, dueTs, paid, status, autoPayMode, lastPaySrc"
+                + " FROM dues WHERE cardKey=?",
+            new String[]{d.cardKey});
+        boolean exists = c.moveToFirst();
+        double oldPaid = 0;
+        String oldStatus = "PENDING";
+        String oldMode = "OFF";
+        String oldSrc = null;
+        boolean sameCycle = false;
+        if (exists) {
+            double oldTotal = c.getDouble(0);
+            long oldDueTs = c.getLong(1);
+            oldPaid = c.getDouble(2);
+            oldStatus = c.getString(3);
+            oldMode = c.getString(4);
+            if (oldMode == null) oldMode = "OFF";
+            oldSrc = c.getString(5);
+            sameCycle = Math.abs(oldTotal - d.totalDue) < 0.005
+                && Math.abs(oldDueTs - d.dueTs) < 3 * 86400000L;
+        }
+        c.close();
         ContentValues v = new ContentValues();
         v.put("cardKey", d.cardKey);
         v.put("bankName", d.bankName);
@@ -498,29 +538,84 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("totalDue", d.totalDue);
         v.put("minDue", d.minDue);
         v.put("dueTs", d.dueTs);
-        v.put("status", "PENDING");
-        v.put("paid", 0);
         v.put("currency", d.currency == null ? "INR" : d.currency);
-        getWritableDatabase().insertWithOnConflict("dues", null, v,
-            SQLiteDatabase.CONFLICT_REPLACE);
+        v.put("autoPayMode", exists ? oldMode : "OFF");
+        if (exists && sameCycle) {
+            v.put("paid", oldPaid);
+            v.put("status", oldStatus);
+            v.put("lastPaySrc", oldSrc);
+            wdb.update("dues", v, "cardKey=?", new String[]{d.cardKey});
+        } else {
+            v.put("paid", 0);
+            v.put("status", "PENDING");
+            v.putNull("lastPaySrc");
+            wdb.insertWithOnConflict("dues", null, v,
+                SQLiteDatabase.CONFLICT_REPLACE);
+        }
     }
 
-    /** Mark a due paid if a matching payment receipt arrives. */
+    /** Manual payment (kept for callers that do not know the source). */
     public boolean markPaid(String cardKey, double paidAmount) {
-        ContentValues v = new ContentValues();
-        v.put("status", "PAID");
-        v.put("paid", paidAmount);
-        int n = getWritableDatabase().update("dues", v,
-            "cardKey=? AND status IN ('PENDING','OUTSTANDING')",
-            new String[]{cardKey});
-        if (n == 0) {
-            // Payment without a known statement: try any card of the same bank.
-            String bank = cardKey.contains("|") ? cardKey.substring(0, cardKey.indexOf('|')) : cardKey;
-            n = getWritableDatabase().update("dues", v,
-                "cardKey LIKE ? AND status IN ('PENDING','OUTSTANDING')",
-                new String[]{bank + "|%"});
+        return markPaid(cardKey, paidAmount, "MANUAL");
+    }
+
+    /**
+     * Record a card-bill payment against the matching due. Payments
+     * accumulate: paying only the minimum due leaves the rest outstanding
+     * and visible. The due is PAID only once paid reaches the total due.
+     * src is MANUAL or AUTO (auto-debit SMS). The payment SMS usually names
+     * the bank account, not the card, so when no due matches the cardKey
+     * exactly the earliest open due of the same bank is used.
+     */
+    public boolean markPaid(String cardKey, double paidAmount, String src) {
+        String target = openDueKey(cardKey);
+        if (target == null) {
+            String bank = cardKey.contains("|")
+                ? cardKey.substring(0, cardKey.indexOf('|')) : cardKey;
+            target = openDueKeyForBank(bank);
         }
-        return n > 0;
+        if (target == null) return false;
+        SQLiteDatabase wdb = getWritableDatabase();
+        wdb.execSQL("UPDATE dues SET paid=paid+?, lastPaySrc=? WHERE cardKey=?",
+            new Object[]{paidAmount, src, target});
+        wdb.execSQL("UPDATE dues SET status='PAID' WHERE cardKey=?"
+            + " AND paid>=totalDue-0.005",
+            new Object[]{target});
+        return true;
+    }
+
+    /** CardKey of an open due matching exactly, or null. */
+    private String openDueKey(String cardKey) {
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT cardKey FROM dues WHERE cardKey=?"
+                + " AND status IN ('PENDING','OUTSTANDING')",
+            new String[]{cardKey});
+        String k = c.moveToFirst() ? c.getString(0) : null;
+        c.close();
+        return k;
+    }
+
+    /** CardKey of the earliest open due of a bank, or null. */
+    private String openDueKeyForBank(String bank) {
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT cardKey FROM dues WHERE cardKey LIKE ?"
+                + " AND status IN ('PENDING','OUTSTANDING')"
+                + " ORDER BY dueTs ASC LIMIT 1",
+            new String[]{bank + "|%"});
+        String k = c.moveToFirst() ? c.getString(0) : null;
+        c.close();
+        return k;
+    }
+
+    /** Set the user's auto-pay mode for a card: OFF, TOTAL or MINIMUM. */
+    public void setAutoPayMode(String cardKey, String mode) {
+        if (mode == null
+            || (!"TOTAL".equals(mode) && !"MINIMUM".equals(mode))) {
+            mode = "OFF";
+        }
+        getWritableDatabase().execSQL(
+            "UPDATE dues SET autoPayMode=? WHERE cardKey=?",
+            new Object[]{mode, cardKey});
     }
 
     public void refreshOverdue(long now) {
@@ -533,7 +628,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<CardDue> getDues() {
         List<CardDue> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid,currency FROM dues"
+            "SELECT cardKey,bankName,card4,totalDue,minDue,dueTs,status,paid,currency,autoPayMode,lastPaySrc FROM dues"
                 + " ORDER BY dueTs ASC", null);
         while (c.moveToNext()) {
             CardDue d = new CardDue();
@@ -546,6 +641,8 @@ public class DbHelper extends SQLiteOpenHelper {
             d.status = c.getString(6);
             d.paid = c.getDouble(7);
             d.currency = c.getString(8);
+            d.autoPayMode = c.getString(9);
+            d.lastPaySrc = c.getString(10);
             out.add(d);
         }
         c.close();

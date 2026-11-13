@@ -19,6 +19,8 @@ public class SmsParser {
         public boolean isTxn;
         public boolean isStatement;
         public boolean isPayment;
+        /** True when the payment arrived by auto-debit / auto-pay. */
+        public boolean isAutoPay;
         public String bankCode = "";
         public String bankName = "";
         public double amount;
@@ -222,6 +224,27 @@ public class SmsParser {
                 || low.contains("payment received")) {
             if (firstAmt > 0) {
                 r.isPayment = true;
+                r.isAutoPay = isAutoPayText(low);
+                r.amount = firstAmt;
+                r.currency = firstCurrency(body);
+                r.card4 = extractCard4(body);
+                r.cardKey = r.bankCode + "|" + (r.card4.isEmpty() ? "CARD" : r.card4);
+                return r;
+            }
+        }
+
+        // 2a) Card-bill payment debit: money left the bank account TO the card
+        // bill ("Rs X debited ... towards ... Credit Card bill/outstanding").
+        // Without this, classify() reads it as a CARD_SPEND (money spent on
+        // the card) and the due is never marked paid. Auto-debit wording
+        // ("auto debit", "autopay", "standing instruction") marks it AUTO.
+        if (low.contains("debit") && low.contains("towards")
+                && (low.contains("credit card") || low.contains("card"))
+                && (low.contains("bill") || low.contains("payment")
+                    || low.contains("outstanding") || low.contains("due"))) {
+            if (firstAmt > 0) {
+                r.isPayment = true;
+                r.isAutoPay = isAutoPayText(low);
                 r.amount = firstAmt;
                 r.currency = firstCurrency(body);
                 r.card4 = extractCard4(body);
@@ -255,6 +278,15 @@ public class SmsParser {
         r.card4 = extractCard4(body);
         if (r.card4.isEmpty()) r.card4 = extractAcct4(body);
         return r;
+    }
+
+    /** True when the message says the payment was an auto-debit / auto-pay /
+     *  standing instruction rather than a manual payment. */
+    private static boolean isAutoPayText(String low) {
+        return low.contains("auto debit") || low.contains("auto-debit")
+            || low.contains("autodebit") || low.contains("auto pay")
+            || low.contains("auto-pay") || low.contains("autopay")
+            || low.contains("standing instruction");
     }
 
     private static String[] detectBank(String addr, String body) {

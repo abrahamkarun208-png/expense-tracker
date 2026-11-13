@@ -62,6 +62,8 @@ public class SmsReceiver extends BroadcastReceiver {
                     try {
                         Importer.importOne(db, fAddr, fBody, fTs);
                         db.refreshOverdue(System.currentTimeMillis());
+                        // A new statement may carry a due with auto-pay on.
+                        AutoPayScheduler.schedule(appCtx);
                     } finally {
                         db.close();
                     }
