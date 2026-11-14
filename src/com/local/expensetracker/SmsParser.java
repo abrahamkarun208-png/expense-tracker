@@ -28,6 +28,15 @@ public class SmsParser {
         public String merchant = "";
         public String card4 = "";
         public String cardKey = "";
+        /** Last-known balance of the bank *account* (Avl Bal / Balance in
+         *  the SMS), 0 when the message carries none. Kept separate from
+         *  the transaction amount: a debit SMS carries both. */
+        public double balance;
+        public String balanceCurrency = "INR";
+        /** Last-4 of the bank account the balance belongs to (from "A/c
+         *  XX1234"). Separate from card4: a card spend's digits are the
+         *  card's, not the account's. */
+        public String acct4 = "";
         public String currency = "INR";   // INR, QAR, AUD, USD (from the amount token)
         /** For self-transfers: OUT when money left the account, IN when it
          *  arrived. Set when the direction is known before the type is
@@ -245,6 +254,9 @@ public class SmsParser {
         r.bankCode = bank[0];
         r.bankName = bank[1];
         r.ref = extractRef(body);
+        r.acct4 = extractAcct4(body);
+        r.balance = extractBalance(body);
+        r.balanceCurrency = extractBalanceCurrency(body);
 
         double firstAmt = firstAmount(body);
 
@@ -313,7 +325,10 @@ public class SmsParser {
         // 3) Transaction
         if (firstAmt <= 0) return null;
         String type = classify(low, body, addr);
-        if (type == null) return null;
+        // Balance-only SMS ("Your A/c XX5533 available balance is
+        // Rs 42,850"): no transaction, but the balance is still worth
+        // keeping. isTxn stays false; the importer records the balance.
+        if (type == null) return r.balance > 0 ? r : null;
         // 3a) Money credited TO a credit card is not bank-account income:
         // card-bill payments and refunds arrive as "Rs X credited to your
         // Credit Card ending 1234" (no word "payment", so section 2 misses
@@ -365,6 +380,30 @@ public class SmsParser {
         Matcher m = REF.matcher(body);
         if (m.find()) return m.group(1);
         return null;
+    }
+
+    /** Balance carried in the SMS ("Avl Bal Rs. 42,850", "Available
+     *  Balance: Rs 18,240", "Bal Rs 9,999", "available balance is
+     *  Rs 42,850"). The keyword is required, so the transaction amount
+     *  can never be mistaken for the balance. An optional "is" covers
+     *  the "balance is Rs ..." wording. Group 1 = currency token (may
+     *  be null), group 2 = number. */
+    private static final Pattern BALANCE = Pattern.compile(
+        "(?i)\\b(?:avl\\.?\\s*bal(?:ance)?|available\\s+bal(?:ance)?"
+        + "|total\\s+bal(?:ance)?|bal(?:ance)?)\\s*:?\\s*(?:is\\s+)?-?\\s*"
+        + "(rs\\.?|inr|usd|qar|qr|aud|\\u20B9|\\$)?\\s*"
+        + "([0-9,]+(?:\\.[0-9]{1,2})?)");
+
+    private static double extractBalance(String body) {
+        Matcher m = BALANCE.matcher(body);
+        if (m.find()) return parseNum(m.group(2));
+        return 0;
+    }
+
+    private static String extractBalanceCurrency(String body) {
+        Matcher m = BALANCE.matcher(body);
+        if (m.find() && m.group(1) != null) return currencyOf(m.group(1));
+        return "INR";
     }
 
     private static String[] detectBank(String addr, String body) {
@@ -425,9 +464,9 @@ public class SmsParser {
 
     private static String extractCard4(String body) {
         // Never treat a bank *account* number ("A/c xx1234", "A/C *XX0000",
-        // "Acct XX1234", "A/c no. XX1234") as a card number.
+        // "A/c *5533", "Acct XX1234", "A/c no. XX1234") as a card number.
         String b = body.replaceAll(
-            "(?i)\\b(?:a\\s*/?\\s*c|acct|account)\\.?\\s*(?:no\\.?\\s*)?\\*?\\s*(?:xx|x{2,})\\s*\\d{4}",
+            "(?i)\\b(?:a\\s*/?\\s*c|acct|account)\\.?\\s*(?:no\\.?\\s*)?\\*?\\s*(?:xx|x{2,})?\\s*\\d{4}",
             " ");
         Matcher m = CARD4.matcher(b);
         if (m.find()) return m.group(1);

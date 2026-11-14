@@ -469,6 +469,29 @@
         <TextView style="@style/SectionHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="@string/bank_status" />
+
+        <LinearLayout
+            android:id="@+id/balanceContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card"
+            android:padding="16dp" />
+
+        <TextView
+            android:id="@+id/emptyBalances"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:text="@string/no_balances"
+            android:textSize="13sp"
+            android:textColor="@color/muted"
+            android:padding="16dp" />
+
+        <TextView style="@style/SectionHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="@string/cards" />
 
         <LinearLayout

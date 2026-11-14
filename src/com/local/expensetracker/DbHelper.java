@@ -15,7 +15,7 @@ import java.util.List;
 public class DbHelper extends SQLiteOpenHelper {
 
     private static final String DB = "expenses.db";
-    private static final int VER = 5;
+    private static final int VER = 6;
 
     public DbHelper(Context c) {
         super(c, DB, null, VER);
@@ -32,6 +32,9 @@ public class DbHelper extends SQLiteOpenHelper {
             + " totalDue REAL, minDue REAL, dueTs INTEGER, status TEXT, paid REAL,"
             + " currency TEXT NOT NULL DEFAULT 'INR',"
             + " autoPayMode TEXT NOT NULL DEFAULT 'OFF', lastPaySrc TEXT)");
+        db.execSQL("CREATE TABLE balances(bankCode TEXT, acct4 TEXT, bankName TEXT,"
+            + " balance REAL, ts INTEGER, currency TEXT NOT NULL DEFAULT 'INR',"
+            + " PRIMARY KEY(bankCode, acct4))");
     }
 
     @Override
@@ -56,6 +59,15 @@ public class DbHelper extends SQLiteOpenHelper {
         // v5: transaction reference (Ref/UTR/RRN) for duplicate-proofing.
         if (oldV < 5) {
             db.execSQL("ALTER TABLE txns ADD COLUMN ref TEXT");
+        }
+        // v6: last-known balance per bank account (Avl Bal in SMS), for
+        // the Bank status card. Old installs fill it from the once-per-
+        // version full rescan, which re-reads every balance SMS.
+        if (oldV < 6) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS balances(bankCode TEXT,"
+                + " acct4 TEXT, bankName TEXT, balance REAL, ts INTEGER,"
+                + " currency TEXT NOT NULL DEFAULT 'INR',"
+                + " PRIMARY KEY(bankCode, acct4))");
         }
     }
 
@@ -781,6 +793,64 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("status", "OUTSTANDING");
         getWritableDatabase().update("dues", v,
             "status='PENDING' AND dueTs<?", new String[]{String.valueOf(now)});
+    }
+
+    /** One bank account's last-known balance, from the newest SMS that
+     *  carried one. The "as of" date is the SMS date: balances only move
+     *  when a bank SMS shows one (UPI spends carry none). */
+    public static class Balance {
+        public String bankCode;
+        public String bankName;
+        public String acct4;
+        public double balance;
+        public long ts;
+        public String currency;
+    }
+
+    /** Record a balance, keeping only the newest per account. A rescan
+     *  re-reads old SMS, so an older reading must never overwrite a
+     *  newer one. */
+    public void upsertBalance(String bankCode, String bankName, String acct4,
+                              double balance, long ts, String currency) {
+        if (bankCode == null) return;
+        if (acct4 == null) acct4 = "";
+        SQLiteDatabase wdb = getWritableDatabase();
+        Cursor c = wdb.rawQuery(
+            "SELECT ts FROM balances WHERE bankCode=? AND acct4=?",
+            new String[]{bankCode, acct4});
+        boolean exists = c.moveToFirst();
+        long oldTs = exists ? c.getLong(0) : 0;
+        c.close();
+        if (exists && ts < oldTs) return;
+        ContentValues v = new ContentValues();
+        v.put("bankCode", bankCode);
+        v.put("acct4", acct4);
+        v.put("bankName", bankName == null ? bankCode : bankName);
+        v.put("balance", balance);
+        v.put("ts", ts);
+        v.put("currency", currency == null ? "INR" : currency);
+        wdb.insertWithOnConflict("balances", null, v,
+            SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /** Last-known balances, newest activity first. */
+    public List<Balance> getBalances() {
+        List<Balance> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+            "SELECT bankCode, bankName, acct4, balance, ts, currency"
+                + " FROM balances ORDER BY bankName, acct4", null);
+        while (c.moveToNext()) {
+            Balance b = new Balance();
+            b.bankCode = c.getString(0);
+            b.bankName = c.getString(1);
+            b.acct4 = c.getString(2);
+            b.balance = c.getDouble(3);
+            b.ts = c.getLong(4);
+            b.currency = c.getString(5);
+            out.add(b);
+        }
+        c.close();
+        return out;
     }
 
     public List<CardDue> getDues() {

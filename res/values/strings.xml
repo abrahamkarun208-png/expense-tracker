@@ -6,7 +6,9 @@
     <string name="grant">Grant permission</string>
     <string name="rescan">Rescan SMS</string>
     <string name="transactions">Transactions</string>
-    <string name="cards">Credit Cards</string>
+    <string name="cards">Credit card status</string>
+    <string name="bank_status">Bank status</string>
+    <string name="no_balances">No balances yet — they appear when a bank SMS shows one.</string>
     <string name="transfers">Transfers</string>
     <string name="no_txns">No transactions found yet.</string>
     <string name="no_dues">No card dues detected.</string>

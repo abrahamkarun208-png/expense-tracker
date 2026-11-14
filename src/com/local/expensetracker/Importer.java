@@ -10,6 +10,14 @@ public class Importer {
         SmsParser.Result r = SmsParser.parse(address, body, smsTs);
         if (r == null) return;
 
+        // Every message that carries a balance updates the account's
+        // last-known balance (Bank status card) - transactions, payment
+        // receipts and balance-only SMS alike.
+        if (r.balance > 0) {
+            db.upsertBalance(r.bankCode, r.bankName, r.acct4, r.balance,
+                smsTs, r.balanceCurrency);
+        }
+
         if (r.isStatement) {
             CardDue d = new CardDue();
             d.cardKey = r.cardKey;

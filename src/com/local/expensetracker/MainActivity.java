@@ -55,6 +55,8 @@ public class MainActivity extends Activity {
     private java.util.Set<String> myCardSet = new java.util.HashSet<String>();
     private LinearLayout txnContainer;
     private LinearLayout dueContainer;
+    private LinearLayout balanceContainer;
+    private TextView emptyBalances;
     private LinearLayout transferContainer;
     private TextView emptyTransfers;
     private TextView permNotice;
@@ -116,6 +118,8 @@ public class MainActivity extends Activity {
 
         txnContainer = findViewById(R.id.txnContainer);
         dueContainer = findViewById(R.id.dueContainer);
+        balanceContainer = findViewById(R.id.balanceContainer);
+        emptyBalances = findViewById(R.id.emptyBalances);
         transferContainer = findViewById(R.id.transferContainer);
         emptyTransfers = findViewById(R.id.emptyTransfers);
         emptyTxns = findViewById(R.id.emptyTxns);
@@ -790,6 +794,10 @@ public class MainActivity extends Activity {
         }).populate(dueContainer);
         emptyDues.setVisibility(dues.isEmpty() ? View.VISIBLE : View.GONE);
 
+        // Bank status: each account's last-known balance with its "as of"
+        // date, from the newest balance-carrying SMS.
+        renderBalances();
+
         // Consolidated inter-bank transfers, separate from expenses: the two
         // legs of one transfer show as a single entry.
         List<TransferGrouper.Entry> transfers =
@@ -797,6 +805,59 @@ public class MainActivity extends Activity {
         new TransferAdapter(this, transfers).populate(transferContainer);
         emptyTransfers.setVisibility(
             transfers.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    /** Bank status rows: bank + last-4, last-known balance, and the "as
+     *  of" date of the SMS it came from. */
+    private void renderBalances() {
+        List<DbHelper.Balance> bals = db.getBalances();
+        balanceContainer.removeAllViews();
+        emptyBalances.setVisibility(bals.isEmpty() ? View.VISIBLE : View.GONE);
+        balanceContainer.setVisibility(
+            bals.isEmpty() ? View.GONE : View.VISIBLE);
+        if (bals.isEmpty()) return;
+        SimpleDateFormat df = new SimpleDateFormat("d MMM yyyy",
+            Locale.getDefault());
+        for (DbHelper.Balance b : bals) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(8), 0, dp(8));
+
+            LinearLayout left = new LinearLayout(this);
+            left.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            left.setLayoutParams(leftLp);
+
+            TextView name = new TextView(this);
+            String label = (b.bankName == null || b.bankName.isEmpty())
+                ? b.bankCode : b.bankName;
+            if (b.acct4 != null && !b.acct4.isEmpty()) {
+                label += " \u2022\u2022\u2022\u2022 " + b.acct4;
+            }
+            name.setText(label);
+            name.setTextSize(14);
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            name.setTextColor(getColor(R.color.ink));
+            left.addView(name);
+
+            TextView asof = new TextView(this);
+            asof.setText("as of " + df.format(new Date(b.ts)));
+            asof.setTextSize(12);
+            asof.setTextColor(getColor(R.color.muted));
+            left.addView(asof);
+            row.addView(left);
+
+            TextView amt = new TextView(this);
+            amt.setText(MoneyFmt.money(b.balance, b.currency));
+            amt.setTextSize(14);
+            amt.setTypeface(Typeface.DEFAULT_BOLD);
+            amt.setTextColor(getColor(R.color.credit));
+            row.addView(amt);
+
+            balanceContainer.addView(row);
+        }
     }
 
     /** Builds the merchant-breakdown donut for weekly/monthly tabs. */
